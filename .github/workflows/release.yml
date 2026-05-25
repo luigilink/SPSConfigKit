@@ -1,0 +1,37 @@
+# This is the SPSConfigKit CI Release workflow to create release from tag push
+
+name: SPSConfigKit CI Release
+
+on:
+  push:
+    # Sequence of patterns matched against refs/tags
+    tags:
+      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # Checkout code
+      - name: Checkout code
+        id: checkout_code
+        uses: actions/checkout@v4
+      # Create a ZIP file with project name and tag version
+      - name: Create ZIP file of scripts
+        run: |
+          zip_name="SPSConfigKit-${{ github.ref_name }}.zip"
+          zip -r $zip_name scripts/
+        shell: bash
+      # Create Release with tag version
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          draft: false
+          prerelease: false
+          body_path: RELEASE-NOTES.md
+          files: |
+            LICENSE
+            SPSConfigKit-${{ github.ref_name }}.zip

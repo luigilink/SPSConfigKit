@@ -130,7 +130,9 @@
       RenderingLocalCacheLocation = 'OOS\RenderingCache'
     }
     SharePoint = @{
-      ProductKey                = 'QXNWY-QHCPC-BF3DK-J94F9-2YXC2'
+      # Replace with your own SharePoint Server SE product key (format: XXXXX-XXXXX-XXXXX-XXXXX-XXXXX).
+      # DO NOT commit a real key — keep this placeholder in source control.
+      ProductKey                = 'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'
       DiagnosticLogs            = 'LOGS\SPS'
       UsageLogs                 = 'LOGS\USAGE'
       UberCumulativeUpdate      = 'F:\SoftwarePackages\SPS\CU\202508\uber-subscription-kb5002773-fullfile-x64-glb.exe'

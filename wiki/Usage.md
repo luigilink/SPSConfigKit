@@ -26,6 +26,11 @@ The end-to-end flow is:
 - `scripts/Secrets.psd1` is filled in with real (or wrapped) credentials.
 - `scripts/sps/CfgAppSps.psd1` describes your nodes, web app, SQL aliases,
   and search topology (see the [Configuration](./Configuration) page).
+- The SoftwarePackages SMB share defined as `NonNodeData.SourcePath`
+  (binaries, language packs, CUs, `.cer` / `.pfx`) is populated. The
+  bundled `scripts/init/Initialize-SoftwarePackages.ps1` will fetch every
+  entry listed in `Initialize-SoftwarePackages.psd1` for you &mdash; run it
+  once on the file-share host.
 - Every target node has been bootstrapped with
   `Initialize-DscNode.ps1` (modules pinned, document-encryption certificate
   imported into `Cert:\LocalMachine\My`).

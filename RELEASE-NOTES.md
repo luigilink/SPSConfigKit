@@ -33,6 +33,25 @@
 - `scripts/init/Initialize-DscEncryption.ps1`
   - Generates the DSC document-encryption .cer/.pfx pair on the authoring host
     and drops it on the share consumed by `Initialize-DscNode.ps1`.
+- `scripts/init/Initialize-SoftwarePackages.ps1` and `Initialize-SoftwarePackages.psd1`
+  - Bootstraps the SMB share consumed by every node in the lab (typically
+    `\\PDC1\SoftwarePackages`, backed by a configurable `Repository` root such
+    as `F:\SoftwarePackages`). Designed to run **once**, on the file-share host.
+  - Downloads every entry in the manifest (SQL Server 2022 Developer + CU,
+    SharePoint Server SE + Language Pack + CU, the SharePoint
+    prerequisites .NET Framework 4.8 and Visual C++ 2015–2019
+    Redistributable, Office Online Server CU) to a per-package `Path`
+    relative to the `Repository` root.
+  - Uses Windows' native `Mount-DiskImage` / `Copy-Item -Recurse` /
+    `Dismount-DiskImage` pipeline to expand ISOs — no 7-Zip or other
+    external tool required, no overlap with `Initialize-DscNode.ps1`.
+  - Outbound-internet detection skips download steps automatically when the
+    host is offline; per-package failures are caught so one bad URL does
+    not abort the whole run.
+  - Idempotent: an optional `Marker` sentinel file per package
+    (defaults to `setup.exe`) short-circuits re-extraction; already-downloaded
+    payloads in `%TEMP%` are reused; the target directory is created on
+    demand.
 - `scripts/Secrets.psd1`
   - Centralised, opt-in credential loader. `serviceAccounts[*].IsAdAccount`
     controls whether the entry is an Active Directory account (default) or a

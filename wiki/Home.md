@@ -17,6 +17,7 @@ the farm to bring it to a known, reproducible state.
 | `scripts/sps/CfgAppSps.ps1`     | SharePoint Server SE farm + Office Online Server | **Production**    |
 | `scripts/init/Initialize-DscNode.ps1` | Node bootstrap (modules, certificate, packages) | **Production**    |
 | `scripts/init/Initialize-DscEncryption.ps1` | DSC document-encryption certificate generator | **Production**    |
+| `scripts/init/Initialize-SoftwarePackages.ps1` | Populates the SoftwarePackages SMB share with SharePoint / SQL / OOS binaries, language packs and CUs | **Production**    |
 | `scripts/pdc/CfgAppPdc.ps1`     | Sample primary domain controller + AD CS         | _Reference only_  |
 | `scripts/pull/CfgAppPull.ps1`   | Sample DSC pull server                           | _Reference only_  |
 | `scripts/sql/CfgAppSql.ps1`     | Sample SQL Server instance for the farm DBs      | _Reference only_  |

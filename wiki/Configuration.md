@@ -23,9 +23,11 @@ scripts) import both files and compile one MOF per node defined in
 scripts/
 ├── Secrets.psd1                ← credentials, shared by every config script
 ├── init/
-│   ├── Initialize-DscNode.psd1     ← prerequisite manifest (modules, certs)
+│   ├── Initialize-DscNode.psd1            ← prerequisite manifest (modules, certs)
 │   ├── Initialize-DscNode.ps1
-│   └── Initialize-DscEncryption.ps1
+│   ├── Initialize-DscEncryption.ps1
+│   ├── Initialize-SoftwarePackages.psd1   ← package manifest (binaries, LPs, CUs)
+│   └── Initialize-SoftwarePackages.ps1
 ├── sps/
 │   ├── CfgAppSps.psd1          ← SharePoint farm ConfigurationData
 │   └── CfgAppSps.ps1
@@ -237,6 +239,76 @@ pattern and are meant to be read alongside their `.ps1` counterparts.
 Use them to see how the loader, the certificate import pattern, and the
 manifest-driven approach work end-to-end &mdash; then **replace them with
 your organisation's production AD, pull-server, and SQL provisioning**.
+
+## `scripts/init/Initialize-SoftwarePackages.psd1`
+
+The manifest read by `Initialize-SoftwarePackages.ps1`. It describes the
+local file-share repository that backs `\\PDC1\SoftwarePackages` (or
+whichever SMB share every node downloads binaries from), and the list of
+packages the script should fetch into it.
+
+```powershell
+@{
+    # Root folder of the local SoftwarePackages repository. Every entry
+    # below uses a Path RELATIVE to this root.
+    Repository = 'F:\SoftwarePackages'
+
+    SoftwarePackages = @(
+        @{
+            Name        = 'SharePointServerSE'
+            Description = 'SharePoint Server Subscription Edition'
+            FileName    = 'OfficeServer.iso'
+            Url         = 'https://download.microsoft.com/.../OfficeServer.iso'
+            Extract     = $true       # mount and copy ISO contents
+            Path        = 'SPS\BIN'   # relative to Repository
+        }
+        @{
+            Name        = 'KB5002773'
+            Description = 'SharePoint Server SE Cumulative Update'
+            FileName    = 'uber-subscription-kb5002773-fullfile-x64-glb.exe'
+            Url         = 'https://download.microsoft.com/.../uber-subscription-kb5002773-fullfile-x64-glb.exe'
+            Extract     = $false      # direct download to Path
+            Path        = 'SPS\CU'
+        }
+        # …SQL Server 2022 + CU, Language Packs, .NET 4.8, VC++ 2015-2019,
+        #   Office Online Server CU…
+    )
+}
+```
+
+### Schema
+
+| Key           | Required | Description                                                                                                                                |
+| ------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Repository`  | yes      | Local root folder backing the SMB share. Every package `Path` is resolved against it.                                                      |
+| `Name`        | yes      | Identifier used in log output.                                                                                                             |
+| `Description` | yes      | Human-readable label, surfaced in the per-package banner.                                                                                  |
+| `FileName`    | yes      | Source file name; for `Extract = $true` packages, this is the temp-file name in `%TEMP%` before mounting.                                  |
+| `Url`         | yes      | Download URL (HTTPS).                                                                                                                      |
+| `Extract`     | yes      | `$true` to mount the ISO with `Mount-DiskImage` and copy its contents into `Path`; `$false` to download the file directly to `Path`.       |
+| `Path`        | yes      | Folder under `Repository` where the file or extracted contents land (e.g. `SPS\BIN`, `SQL\CU`, `SPS\LP\FR-fr`).                            |
+| `Marker`      | no       | Sentinel file used to short-circuit re-extraction. Defaults to `setup.exe`, which is correct for the SQL Server, SharePoint, and LP ISOs.  |
+
+### Idempotency
+
+- For `Extract = $true` entries, the script skips the package when
+  `<Path>\<Marker>` already exists.
+- For `Extract = $false` entries, the script skips the package when
+  `<Path>\<FileName>` already exists.
+- Downloaded ISOs cached in `%TEMP%` are reused when a previous run was
+  interrupted between download and extraction.
+
+### Why no 7-Zip?
+
+ISO expansion uses Windows' built-in `Mount-DiskImage` /
+`Copy-Item -Recurse` / `Dismount-DiskImage` pipeline, so the file-share
+host has **zero external dependencies** beyond Windows itself. Required
+capability: Windows 8 / Server 2012 or newer (for `Mount-DiskImage`).
+
+> [!NOTE]
+> The script also detects outbound internet access once at startup and
+> skips the download phase entirely on offline hosts. Per-package failures
+> are caught and logged so one bad URL does not abort the whole run.
 
 ## Next step
 

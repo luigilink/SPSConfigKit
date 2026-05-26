@@ -96,7 +96,29 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    # download https://github.com/luigilink/SPSConfigKit/releases/latest
    ```
 
-2. **Generate the DSC document-encryption certificate** (one-time, on the
+2. **Populate the SoftwarePackages share** (one-time, on the VM that hosts
+   the SMB share consumed by every node &mdash; typically the PDC, exposing
+   `\\PDC1\SoftwarePackages` backed by `F:\SoftwarePackages`):
+
+   ```powershell
+   .\scripts\init\Initialize-SoftwarePackages.ps1
+   ```
+
+   The script reads `Initialize-SoftwarePackages.psd1` (next to the
+   script), then downloads each entry &mdash; SQL Server 2022 + CU,
+   SharePoint Server SE + Language Pack + CU, the SharePoint
+   prerequisites (.NET 4.8 and VC++ 2015&ndash;2019), Office Online
+   Server CU &mdash; into a folder layout under the configured
+   `Repository` root. ISOs are expanded with Windows' built-in
+   `Mount-DiskImage` pipeline, so no 7-Zip or other external tool is
+   required.
+
+   Re-runs are idempotent: already-extracted ISOs (detected by the
+   per-package `Marker` sentinel, default `setup.exe`) and
+   already-downloaded payloads are skipped. See the
+   [Configuration](./Configuration) page for the manifest schema.
+
+3. **Generate the DSC document-encryption certificate** (one-time, on the
    authoring host or on a designated certificate host):
 
    ```powershell
@@ -106,7 +128,7 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    This produces `DscEncryption.cer` and `DscEncryption.pfx` and copies them
    to the share defined in `Initialize-DscNode.psd1` (`SourcePath`).
 
-3. **Bootstrap every target node** (run on each SharePoint / OOS server):
+4. **Bootstrap every target node** (run on each SharePoint / OOS server):
 
    ```powershell
    .\scripts\init\Initialize-DscNode.ps1
@@ -117,16 +139,16 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    `Cert:\LocalMachine\My`. The Chocolatey and `Install-Module` phases are
    skipped automatically if the node has no outbound internet.
 
-4. **Fill in `scripts/Secrets.psd1`** with the AD service accounts, the
+5. **Fill in `scripts/Secrets.psd1`** with the AD service accounts, the
    farm passphrase, the DSRM password, and the PFX passwords for every
    certificate referenced by your configuration. See the
    [Configuration](./Configuration) page for the schema.
 
-5. **Customise `scripts/sps/CfgAppSps.psd1`** to describe your nodes, your
+6. **Customise `scripts/sps/CfgAppSps.psd1`** to describe your nodes, your
    web applications, your SQL aliases, and your search topology. See the
    [Configuration](./Configuration) page for a walkthrough of each section.
 
-6. **Compile and apply** the MOFs. See the [Usage](./Usage) page.
+7. **Compile and apply** the MOFs. See the [Usage](./Usage) page.
 
 ## Next step
 

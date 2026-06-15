@@ -229,6 +229,43 @@ and is the canonical schema &mdash; treat the snippet above as a map.
 - **`Drives.Data` / `Drives.Logs`** prefix every per-node path so each
   farm role can point at different physical drives without editing the
   script.
+- **Per-product path overrides (optional)** &mdash; if your customer's file
+  hierarchy doesn't match the kit's default
+  (`<SourcePath>\SPS` &rarr; `<Drives.Data>\SoftwarePackages\SPS\{BIN,LP,CU}`
+  and the same shape for OOS), override any subset of the following keys
+  in `NonNodeData.SharePoint` and / or `NonNodeData.OOS` &mdash; defaults
+  preserve the original layout:
+
+  | Key                          | Purpose                                                                                  | Default                                                |
+  |------------------------------|------------------------------------------------------------------------------------------|--------------------------------------------------------|
+  | `SourcePath`                 | Network share holding the product's setup files.                                         | `<NonNodeData.SourcePath>\<SPS\|OOS>`                  |
+  | `DestinationPath`            | Local folder the setup files are copied to.                                              | `<Drives.Data>\SoftwarePackages\<SPS\|OOS>`            |
+  | `Subfolders.Binaries`        | Sub-folder of `DestinationPath` holding the main installer (`setup.exe` / prereq).       | `BIN`                                                  |
+  | `Subfolders.LanguagePack`    | Sub-folder of `DestinationPath` holding per-locale Language Pack installers.             | `LP`                                                   |
+  | `Subfolders.CumulativeUpdate`| Sub-folder of `DestinationPath` holding the CU package(s).                               | `CU`                                                   |
+
+  Existing absolute values for `SharePoint.UberCumulativeUpdate` and
+  `OOS.CUFileName` keep working unchanged: any rooted path is used as-is,
+  otherwise the value is resolved under
+  `<DestinationPath>\<Subfolders.CumulativeUpdate>`.
+- **`SharePoint.LanguagePacks`** (optional) &mdash; array of SharePoint
+  locale codes (e.g. `@('fr-fr','es-es')`). Each entry must match a
+  sub-folder under `<DestinationPath>\<Subfolders.LanguagePack>\` that
+  contains the corresponding `setup.exe`. Omit or leave as `@()` to skip
+  Language Pack installation entirely.
+- **`SharePoint.ManagedAccounts`** (optional) &mdash; allowlist of
+  `Secrets.psd1` account names that SharePoint should register as
+  `SPManagedAccount` resources on the farm master. Defaults to
+  `@('FARM', 'IISAPP', 'SEARCH')`. Extend the list when you introduce a
+  new dedicated SharePoint service account; leave it untouched to keep
+  the historical set. Anything not in the allowlist (`PULLSETUP`,
+  `IISPULLAPP`, SQL / OOS / monitoring accounts &hellip;) is intentionally
+  ignored and stays out of the SPS MOF.
+- **SQL Server path overrides (optional)** &mdash; `scripts/sql/CfgAppSql.psd1`
+  exposes the same `SourcePath` / `DestinationPath` keys under
+  `NonNodeData.SQL`. Defaults are `<NonNodeData.SourcePath>\SQL` and
+  `<Drives.Data>\SoftwarePackages\SQL`. SQL doesn't use `Subfolders` &mdash;
+  `setup.exe` is expected at the root of `DestinationPath`.
 
 ## Reference example `.psd1`s (PDC / PULL / SQL)
 
@@ -309,6 +346,106 @@ capability: Windows 8 / Server 2012 or newer (for `Mount-DiskImage`).
 > The script also detects outbound internet access once at startup and
 > skips the download phase entirely on offline hosts. Per-package failures
 > are caught and logged so one bad URL does not abort the whole run.
+
+## Validating your ConfigurationData
+
+Before compiling any MOF, run the bundled Pester v5 pre-flight suite
+against your `.psd1` files. It catches the mistakes that would otherwise
+surface mid-run on the customer site &mdash; placeholder product key,
+duplicate `NodeName`, missing `Secrets.psd1` entry for a managed account,
+mismatched `CertName` &harr; `ADC.certificates`, malformed Language Pack
+locale, unreachable `\\share\setup.exe`, missing `.pfx` &hellip;
+
+```powershell
+# Full validation (workstation must have the install share mounted).
+.\scripts\test\Invoke-ConfigDataTest.ps1 -ConfigPath .\scripts\sps\CfgAppSps.psd1
+
+# Structure-only (skip every Test-Path on the install share / certificates).
+.\scripts\test\Invoke-ConfigDataTest.ps1 -ConfigPath .\scripts\sql\CfgAppSql.psd1 -SkipFilesystem
+```
+
+The driver exits with code `1` on the first failure, so it can be wired
+into CI or used as a hard gate before `Start-DscConfiguration`:
+
+```powershell
+.\scripts\test\Invoke-ConfigDataTest.ps1 -ConfigPath .\scripts\sps\CfgAppSps.psd1
+if ($LASTEXITCODE -ne 0) { throw 'Config invalid — refusing to compile MOFs.' }
+```
+
+### What the suite checks
+
+Every check is read-only. Sections that don't apply to the file under test
+are skipped automatically (e.g. SharePoint checks are not run against
+`CfgAppSql.psd1`).
+
+- **File integrity** &mdash; `Import-PowerShellDataFile` succeeds;
+  `AllNodes` / `NonNodeData` present; the wildcard `*` node declares
+  `PSDscAllowPlainTextPassword` / `PSDscAllowDomainUser`.
+- **AllNodes** &mdash; `NodeName` values unique; exactly one `IsMaster`
+  per role family (SPS, OOS); at least one `IsSPSServer` / `IsOOSServer`
+  / `IsSQLServer` when the matching `NonNodeData` section is present.
+- **Drives &amp; `SourcePath`** &mdash; `Drives.Data` / `Drives.Logs`
+  match `^[A-Z]:$`; `NonNodeData.SourcePath` is a UNC or rooted local
+  path.
+- **Product key** &mdash; `SharePoint.ProductKey` matches
+  `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` **and** is not the placeholder
+  `XXXXX-...`.
+- **Ports** &mdash; `CentralAdministrationPort` and `SQLAlias[*].Port`
+  are valid integers in `1..65535`.
+- **Certificates** &mdash; `ADC.certificates[*].Name` unique; every cert
+  has a matching `Secrets.psd1` entry (drives the PFX password);
+  `WebApplications[*].CertName` resolves to a known cert `Name`;
+  `OOS.CertFriendlyName` resolves to a known `FriendlyName`.
+- **Managed accounts** &mdash; `SharePoint.ManagedAccounts` (or the
+  default `@('FARM','IISAPP','SEARCH')` when omitted) is a subset of
+  `Secrets.psd1`.
+- **Language packs** &mdash; each `SharePoint.LanguagePacks` entry
+  matches `xx-xx`.
+- **Filesystem reachability** *(skipped by `-SkipFilesystem`)* &mdash;
+  `SourcePath`, `BIN\setup.exe`, `LP\<locale>\setup.exe`, and the CU
+  package for both SPS and OOS; SQL `SourcePath\setup.exe`; every
+  `ADC.certificates[*].CertPath` / `PfxPath`.
+
+Filesystem checks reuse the exact same `Resolve-ProductPaths` resolution
+as `CfgAppSps.ps1`, so the per-product `SourcePath` / `Subfolders`
+overrides documented above are validated against the same paths the MOF
+will compile with.
+
+### Reading the output
+
+Pester v5 prefixes each `It` line with a status glyph, and the wrapper
+adds a one-line summary that *also* surfaces the number of skipped tests
+so a clean run never looks misleadingly green:
+
+| Glyph | Meaning |
+| --- | --- |
+| `[+]` | Passed |
+| `[-]` | **Failed** &mdash; fix before compiling MOFs |
+| `[!]` | **Skipped** &mdash; the section / context didn't apply (e.g. SPS checks against `CfgAppSql.psd1`, or filesystem checks under `-SkipFilesystem`). **Not a failure.** |
+
+```text
+Tests Passed: 59, Failed: 0, Skipped: 3, Inconclusive: 0, NotRun: 0
+
+59 of 62 test(s) passed; 3 skipped (sections not present in this config
+or filesystem checks disabled). ConfigurationData looks healthy.
+```
+
+A run with `Failed: 0` is healthy regardless of the skipped count;
+sections gate themselves off when the relevant `NonNodeData` sub-tree is
+missing. The wrapper still returns exit code `0` so CI / pre-MOF gates
+work the same way.
+
+### Prerequisite
+
+The suite requires **Pester 5.0.0 or later** on the authoring host
+(Windows PowerShell 5.1 ships with Pester 3.x by default):
+
+```powershell
+Install-Module Pester -MinimumVersion 5.0.0 -Force -SkipPublisherCheck
+```
+
+No other module is needed; the test files use only built-in cmdlets and
+Pester v5.
 
 ## Next step
 

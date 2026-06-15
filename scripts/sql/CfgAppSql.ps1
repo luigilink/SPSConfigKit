@@ -179,9 +179,23 @@ try {
 
     #For all servers with SQL Server Role
     Node $AllNodes.Where{ $_.IsSQLServer }.Nodename {
-      #Initialize variables for SQL Source Path
-      $sqlSourcePath = "$($ConfigurationData.NonNodeData.SourcePath)\SQL"
-      $sqlDestinationPath = "$($ConfigurationData.NonNodeData.Drives.Data)\SoftwarePackages\SQL"
+      #Initialize variables for SQL Source Path.
+      # Customers can override NonNodeData.SQL.SourcePath / .DestinationPath in their .psd1
+      # without touching the configuration script. Defaults preserve the original layout:
+      #   <SourcePath>\SQL  /  <Drives.Data>\SoftwarePackages\SQL
+      $sqlConfig = if ($ConfigurationData.NonNodeData.SQL) { $ConfigurationData.NonNodeData.SQL } else { @{} }
+      $sqlSourcePath = if ($sqlConfig.SourcePath) {
+        $sqlConfig.SourcePath
+      }
+      else {
+        "$($ConfigurationData.NonNodeData.SourcePath)\SQL"
+      }
+      $sqlDestinationPath = if ($sqlConfig.DestinationPath) {
+        $sqlConfig.DestinationPath
+      }
+      else {
+        "$($ConfigurationData.NonNodeData.Drives.Data)\SoftwarePackages\SQL"
+      }
       #Copy the SQL installation files from File Share
       File APPLICATION_SqlGetSources {
         Ensure          = 'Present'

@@ -153,6 +153,41 @@ try {
     }
   }
 
+  function Resolve-ProductPaths() {
+    <#
+      .SYNOPSIS
+      Resolves installation-media source/destination paths for a product (SharePoint, OOS, ...)
+      with sensible defaults, so customers with non-standard file hierarchies can override any
+      level without forking the configuration script.
+
+      Resolution rules (all overrides are optional):
+        Source           = $ProductConfig.SourcePath       ?? Join-Path $SourceRoot      $DefaultSubFolder
+        Destination      = $ProductConfig.DestinationPath  ?? Join-Path $DestinationRoot $DefaultSubFolder
+        Binaries         = Join-Path $Destination ($ProductConfig.Subfolders.Binaries         ?? 'BIN')
+        LanguagePack     = Join-Path $Destination ($ProductConfig.Subfolders.LanguagePack     ?? 'LP')
+        CumulativeUpdate = Join-Path $Destination ($ProductConfig.Subfolders.CumulativeUpdate ?? 'CU')
+    #>
+    param
+    (
+      [parameter(Mandatory = $true)] [hashtable] $ProductConfig,
+      [parameter(Mandatory = $true)] [System.String] $SourceRoot,
+      [parameter(Mandatory = $true)] [System.String] $DestinationRoot,
+      [parameter(Mandatory = $true)] [System.String] $DefaultSubFolder
+    )
+    $source = if ($ProductConfig.SourcePath) { $ProductConfig.SourcePath } else { Join-Path $SourceRoot $DefaultSubFolder }
+    $dest = if ($ProductConfig.DestinationPath) { $ProductConfig.DestinationPath } else { Join-Path $DestinationRoot $DefaultSubFolder }
+    $subs = if ($ProductConfig.Subfolders) { $ProductConfig.Subfolders } else { @{} }
+    $binSub = if ($subs.Binaries) { $subs.Binaries } else { 'BIN' }
+    $lpSub = if ($subs.LanguagePack) { $subs.LanguagePack } else { 'LP' }
+    $cuSub = if ($subs.CumulativeUpdate) { $subs.CumulativeUpdate } else { 'CU' }
+    return @{
+      Source           = $source
+      Destination      = $dest
+      Binaries         = (Join-Path $dest $binSub)
+      LanguagePack     = (Join-Path $dest $lpSub)
+      CumulativeUpdate = (Join-Path $dest $cuSub)
+    }
+  }
 
   Configuration CfgAppSps {
     # NOTE: Module versions below MUST stay in sync with
@@ -267,15 +302,22 @@ try {
         }
       }
 
-      #Initialize variables for SharePoint Source Path
-      $spSourcePath = "$($ConfigurationData.NonNodeData.SourcePath)\SPS"
-      $spDestinationPath = "$($ConfigurationData.NonNodeData.Drives.Data)\SoftwarePackages\SPS"
+      #Initialize variables for SharePoint Source Path.
+      # Resolution is delegated to Resolve-ProductPaths so customers can override
+      # NonNodeData.SharePoint.SourcePath / .DestinationPath / .Subfolders.* in their .psd1
+      # without touching the configuration script. Defaults preserve the original layout:
+      #   <SourcePath>\SPS  /  <Drives.Data>\SoftwarePackages\SPS  with BIN / LP / CU subfolders.
+      $spPaths = Resolve-ProductPaths `
+        -ProductConfig    $ConfigurationData.NonNodeData.SharePoint `
+        -SourceRoot       $ConfigurationData.NonNodeData.SourcePath `
+        -DestinationRoot  (Join-Path $ConfigurationData.NonNodeData.Drives.Data 'SoftwarePackages') `
+        -DefaultSubFolder 'SPS'
       #Copy the SharePoint installation files from the Azure File Share
       File APPLICATION_SpsGetSources {
         Ensure          = 'Present'
         Type            = 'Directory'
-        SourcePath      = $spSourcePath
-        DestinationPath = $spDestinationPath
+        SourcePath      = $spPaths.Source
+        DestinationPath = $spPaths.Destination
         Recurse         = $true
         MatchSource     = $true
         Force           = $true
@@ -305,7 +347,7 @@ try {
         DependsOn        = '[File]APPLICATION_SpsGetSources'
         Ensure           = 'Present'
         IsSingleInstance = 'Yes'
-        InstallerPath    = "$($spDestinationPath)\BIN\prerequisiteinstaller.exe"
+        InstallerPath    = (Join-Path $spPaths.Binaries 'prerequisiteinstaller.exe')
         OnlineMode       = $True
       }
 
@@ -355,7 +397,7 @@ try {
         DependsOn        = '[SPInstallPrereqs]APPLICATION_SpsInstallPrereqs'
         Ensure           = 'Present'
         IsSingleInstance = 'Yes'
-        BinaryDir        = "$($spDestinationPath)\BIN"
+        BinaryDir        = $spPaths.Binaries
         ProductKey       = "$($ConfigurationData.NonNodeData.SharePoint.ProductKey)"
         DataPath         = "$($ConfigurationData.NonNodeData.Drives.Data)\OfficeServer\Data"
       }
@@ -364,17 +406,34 @@ try {
         Message   = '[SPInstall]Installation of SharePoint Server Completed'
         DependsOn = '[SPInstall]APPLICATION_SpsInstallSharePoint'
       }
-      #Installation of Language Pack fr-fr for SharePoint
-      SPInstallLanguagePack APPLICATION_SpsLangPackFr {
-        DependsOn = '[SPInstall]APPLICATION_SpsInstallSharePoint'
-        Ensure    = 'Present'
-        BinaryDir = "$($spDestinationPath)\LP\fr-fr"
-      }
-      # Log the progress of the installation of SharePoint Server
-      Log APPLICATION_SpsInstallLanguagePackFr_Completed {
-        #The message below gets written to the Microsoft-Windows-Desired State Configuration/Analytic log
-        Message   = '[SPInstallLanguagePack]Installation of Language Pack fr-fr Completed'
-        DependsOn = '[SPInstallLanguagePack]APPLICATION_SpsLangPackFr'
+      # Installation of SharePoint Language Packs (data-driven).
+      # When NonNodeData.SharePoint.LanguagePacks is null or empty, no SPInstallLanguagePack
+      # resources are emitted and the SPProductUpdate (CU) resource chains directly off SPInstall.
+      # When one or more locales are listed, each pack installs sequentially (chained via DependsOn)
+      # to avoid concurrent SharePoint setup invocations, and the CU resource depends on the last pack.
+      $spLanguagePacks = $ConfigurationData.NonNodeData.SharePoint.LanguagePacks
+      $cuDependsOn = '[SPInstall]APPLICATION_SpsInstallSharePoint'
+      if ($null -ne $spLanguagePacks -and $spLanguagePacks.Count -gt 0) {
+        $previousLangPackResource = '[SPInstall]APPLICATION_SpsInstallSharePoint'
+        foreach ($spLanguagePack in $spLanguagePacks) {
+          # Sanitise the locale code (e.g. 'fr-fr' -> 'frfr') to build a valid DSC resource identifier.
+          $lpToken = ($spLanguagePack -replace '[^A-Za-z0-9]', '')
+          $lpResourceName = "APPLICATION_SpsLangPack_$lpToken"
+          SPInstallLanguagePack $lpResourceName {
+            DependsOn = $previousLangPackResource
+            Ensure    = 'Present'
+            BinaryDir = (Join-Path $spPaths.LanguagePack $spLanguagePack)
+          }
+          # Log the progress of the installation of each Language Pack
+          Log "APPLICATION_SpsInstallLanguagePack_${lpToken}_Completed" {
+            #The message below gets written to the Microsoft-Windows-Desired State Configuration/Analytic log
+            Message   = "[SPInstallLanguagePack]Installation of Language Pack $spLanguagePack Completed"
+            DependsOn = "[SPInstallLanguagePack]$lpResourceName"
+          }
+          $previousLangPackResource = "[SPInstallLanguagePack]$lpResourceName"
+        }
+        # CU must wait for the final language pack so binary patching applies to every installed locale.
+        $cuDependsOn = $previousLangPackResource
       }
       # Add SharePoint diagnostic logs folder
       File APPLICATION_SpsApplyDiagLogFolder {
@@ -388,10 +447,20 @@ try {
         Type            = 'Directory'
         DestinationPath = "$($ConfigurationData.NonNodeData.Drives.Logs)\$($ConfigurationData.NonNodeData.SharePoint.UsageLogs)"
       }
-      #Install SharePoint Server Cumulative Updates
+      #Install SharePoint Server Cumulative Updates.
+      # UberCumulativeUpdate may be either a fully-qualified path (used as-is, the original
+      # behaviour) or a path relative to $spPaths.CumulativeUpdate. Detecting via IsPathRooted
+      # preserves backward compatibility for existing .psd1 files.
+      $spCuValue = $ConfigurationData.NonNodeData.SharePoint.UberCumulativeUpdate
+      $spCuSetupFile = if ([System.IO.Path]::IsPathRooted($spCuValue)) {
+        $spCuValue
+      }
+      else {
+        Join-Path $spPaths.CumulativeUpdate $spCuValue
+      }
       SPProductUpdate 'APPLICATION_SpsCumulativeUpdateUberInstallation' {
-        DependsOn            = '[SPInstallLanguagePack]APPLICATION_SpsLangPackFr'
-        SetupFile            = "$($ConfigurationData.NonNodeData.SharePoint.UberCumulativeUpdate)"
+        DependsOn            = $cuDependsOn
+        SetupFile            = $spCuSetupFile
         ShutdownServices     = $false
         Ensure               = 'Present'
         PsDscRunAsCredential = $SETUP
@@ -423,15 +492,23 @@ try {
         ServerRole                   = $Node.SPServerRole
         DatabaseConnectionEncryption = 'Optional'
       }
-      # Add SharePoint Managed Account
-      $IsNotUserAccounts = $secretsData.serviceAccounts | Where-Object -FilterScript {
-        $_.IsAdAccount -ne $false
+      # Add SharePoint Managed Account.
+      # Allowlist of Secrets.psd1 entries that SharePoint owns as Managed Accounts.
+      # The list is read from NonNodeData.SharePoint.ManagedAccounts so customers can extend
+      # it (e.g. add a dedicated Workflow / custom service-app account) without forking the
+      # configuration script. When the key is omitted the historical default
+      # @('FARM', 'IISAPP', 'SEARCH') is used. The allowlist approach guarantees that
+      # unrelated entries added to Secrets.psd1 (PULLSETUP / IISPULLAPP for the DSC pull
+      # server, SQL / OOS / monitoring accounts, etc.) never leak into the SPS MOF.
+      $spManagedAccountNames = if ($ConfigurationData.NonNodeData.SharePoint.ManagedAccounts) {
+        $ConfigurationData.NonNodeData.SharePoint.ManagedAccounts
       }
-      $spManagedAccounts = $IsNotUserAccounts | Where-Object -Filterscript { $_.Name -ne 'SQLSERVER' -and `
-          $_.Name -ne 'CONTENT' -and `
-          $_.Name -ne 'SUPERUSER' -and `
-          $_.Name -ne 'SUPEREADER' -and `
-          $_.Name -ne 'SETUP' }
+      else {
+        @('FARM', 'IISAPP', 'SEARCH')
+      }
+      $spManagedAccounts = $secretsData.serviceAccounts | Where-Object -FilterScript {
+        $spManagedAccountNames -contains $_.Name
+      }
       foreach ($spManagedAccount in $spManagedAccounts) {
         $name = $spManagedAccount.Name
         $username = "$($spManagedAccount.UserName)"
@@ -1167,9 +1244,16 @@ try {
         PsDscRunAsCredential = $ADSETUP
         DependsOn            = $dependsOnSPSSetup
       }
-      #Initialize path variables
-      $oosDestinationPath = "$($ConfigurationData.NonNodeData.Drives.Data)\SoftwarePackages\OOS"
-      $oosSourcePath = "$($ConfigurationData.NonNodeData.SourcePath)\OOS\"
+      #Initialize path variables.
+      # Resolution is delegated to Resolve-ProductPaths so customers can override
+      # NonNodeData.OOS.SourcePath / .DestinationPath / .Subfolders.* in their .psd1
+      # without touching the configuration script. Defaults preserve the original layout:
+      #   <SourcePath>\OOS  /  <Drives.Data>\SoftwarePackages\OOS  with BIN / LP / CU subfolders.
+      $oosPaths = Resolve-ProductPaths `
+        -ProductConfig    $ConfigurationData.NonNodeData.OOS `
+        -SourceRoot       $ConfigurationData.NonNodeData.SourcePath `
+        -DestinationRoot  (Join-Path $ConfigurationData.NonNodeData.Drives.Data 'SoftwarePackages') `
+        -DefaultSubFolder 'OOS'
       #Install Office Online Server Prerequisites
       $requiredFeatures = @(
         'Web-Server', 'Web-Mgmt-Tools', 'Web-Mgmt-Console', 'Web-WebServer',
@@ -1232,8 +1316,8 @@ try {
       }
       #Get Office Online Server installation files
       File APPLICATION_OOSGetSources {
-        SourcePath      = $oosSourcePath
-        DestinationPath = $oosDestinationPath
+        SourcePath      = $oosPaths.Source
+        DestinationPath = $oosPaths.Destination
         Ensure          = 'Present'
         Recurse         = $true
         Credential      = $ADSETUP
@@ -1246,24 +1330,34 @@ try {
       }
       #Install Office Online Server
       OfficeOnlineServerInstall APPLICATION_OOSInstallBinaries {
-        Path      = "$($oosDestinationPath)\BIN\setup.exe"
+        Path      = (Join-Path $oosPaths.Binaries 'setup.exe')
         DependsOn = $prereqDependencies, '[File]APPLICATION_OOSGetSources'
         Ensure    = 'Present'
       }
       #Install Office Online Server Language Pack fr-FR
       OfficeOnlineServerInstallLanguagePack APPLICATION_OOSInstallLP {
-        BinaryDir = "$($oosDestinationPath)\LP\Fr-fr"
+        BinaryDir = (Join-Path $oosPaths.LanguagePack 'Fr-fr')
         Language  = 'fr-fr'
         DependsOn = $prereqDependencies, '[File]APPLICATION_OOSGetSources', '[OfficeOnlineServerInstall]APPLICATION_OOSInstallBinaries'
         Ensure    = 'Present'
       }
-      #Install Office Online Server Updates
+      #Install Office Online Server Updates.
+      # CUFileName may be a filename (resolved under $oosPaths.CumulativeUpdate, the original
+      # behaviour) or a fully-qualified path (used as-is). IsPathRooted preserves backward
+      # compatibility for existing .psd1 files.
       if ($null -ne $ConfigurationData.NonNodeData.OOS.CUFileName) {
+        $oosCuValue = $ConfigurationData.NonNodeData.OOS.CUFileName
+        $oosCuSetupFile = if ([System.IO.Path]::IsPathRooted($oosCuValue)) {
+          $oosCuValue
+        }
+        else {
+          Join-Path $oosPaths.CumulativeUpdate $oosCuValue
+        }
         OfficeOnlineServerProductUpdate APPLICATION_OOSInstallCU {
           Ensure               = 'Present'
           DependsOn            = '[OfficeOnlineServerInstallLanguagePack]APPLICATION_OOSInstallLP'
           PsDscRunAsCredential = $SETUP
-          SetupFile            = "$($oosDestinationPath)\CU\$($ConfigurationData.NonNodeData.OOS.CUFileName)"
+          SetupFile            = $oosCuSetupFile
           Servers              = $ConfigurationData.NonNodeData.OOS.AllServers
         }
       }

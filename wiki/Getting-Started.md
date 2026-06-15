@@ -18,6 +18,14 @@
 - Network access to the file share that hosts the binaries and the DSC
   document-encryption certificate (the share path is set in
   `Initialize-DscNode.psd1`)
+- **Pester 5.0.0 or later** &mdash; required by the
+  `scripts/test/Invoke-ConfigDataTest.ps1` pre-flight validator. Windows
+  PowerShell 5.1 ships with Pester 3.x, so install the newer version
+  side-by-side:
+
+  ```powershell
+  Install-Module Pester -MinimumVersion 5.0.0 -Force -SkipPublisherCheck
+  ```
 
 ### Target nodes (SharePoint servers + OOS)
 
@@ -148,7 +156,24 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    web applications, your SQL aliases, and your search topology. See the
    [Configuration](./Configuration) page for a walkthrough of each section.
 
-7. **Compile and apply** the MOFs. See the [Usage](./Usage) page.
+7. **Validate your ConfigurationData** before compiling any MOF:
+
+   ```powershell
+   .\scripts\test\Invoke-ConfigDataTest.ps1 -ConfigPath .\scripts\sps\CfgAppSps.psd1
+   ```
+
+   The Pester v5 suite catches the common mistakes that would otherwise
+   surface mid-run on the customer site (placeholder product key,
+   duplicate `NodeName`, managed account missing from `Secrets.psd1`,
+   mismatched `CertName`, unreachable `\\share\setup.exe`, &hellip;). Add
+   `-SkipFilesystem` to skip the share / `.cer` / `.pfx` /
+   `setup.exe` reachability checks when the install share isn't mounted
+   on the authoring host. The driver exits with code `1` on the first
+   failure so it can be wired into CI. See the
+   [Configuration](./Configuration#validating-your-configurationdata) page
+   for the full check list.
+
+8. **Compile and apply** the MOFs. See the [Usage](./Usage) page.
 
 ## Next step
 

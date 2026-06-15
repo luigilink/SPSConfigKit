@@ -23,5 +23,14 @@
       Logs = 'G:'
       Temp = 'F:'
     }
+    # Optional installation-media path overrides for customers whose file hierarchy
+    # differs from the kit's defaults. When omitted the script falls back to:
+    #   SourcePath      = <NonNodeData.SourcePath>\SQL
+    #   DestinationPath = <Drives.Data>\SoftwarePackages\SQL
+    # SQL setup.exe is expected at the root of DestinationPath (no BIN/LP/CU subfolders).
+    SQL         = @{
+      # SourcePath      = '\\PDC1\Softwarepackages\SQL'
+      # DestinationPath = 'F:\SoftwarePackages\SQL'
+    }
   }
 }

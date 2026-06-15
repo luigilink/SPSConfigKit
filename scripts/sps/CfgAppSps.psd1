@@ -122,6 +122,15 @@
     }
     OOS        = @{
       AllServers                  = @('OOS')
+      # Optional installation-media path overrides. When omitted the script falls back to:
+      #   SourcePath      = <NonNodeData.SourcePath>\OOS
+      #   DestinationPath = <Drives.Data>\SoftwarePackages\OOS
+      # Each Subfolders entry is also optional and defaults to BIN / LP / CU respectively.
+      # CUFileName may be a filename (resolved relative to <DestinationPath>\<Subfolders.CumulativeUpdate>)
+      # or an absolute path (used as-is).
+      # SourcePath                  = '\\PDC1\Softwarepackages\OOS'
+      # DestinationPath             = 'F:\SoftwarePackages\OOS'
+      # Subfolders                  = @{ Binaries = 'BIN'; LanguagePack = 'LP'; CumulativeUpdate = 'CU' }
       CUFileName                  = 'wacserver2019-kb5002752-fullfile-x64-glb.exe'
       URL                         = 'oosweb.contoso.com'
       CertFriendlyName            = 'OOSCertSSL'
@@ -135,7 +144,22 @@
       ProductKey                = 'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'
       DiagnosticLogs            = 'LOGS\SPS'
       UsageLogs                 = 'LOGS\USAGE'
-      UberCumulativeUpdate      = 'F:\SoftwarePackages\SPS\CU\202508\uber-subscription-kb5002773-fullfile-x64-glb.exe'
+      # Optional installation-media path overrides for customers whose file hierarchy
+      # differs from the kit's defaults. When omitted the script falls back to:
+      #   SourcePath      = <NonNodeData.SourcePath>\SPS
+      #   DestinationPath = <Drives.Data>\SoftwarePackages\SPS
+      # Each Subfolders entry is also optional and defaults to BIN / LP / CU respectively.
+      # SourcePath                = '\\PDC1\Softwarepackages\SPS'
+      # DestinationPath           = 'F:\SoftwarePackages\SPS'
+      # Subfolders                = @{ Binaries = 'BIN'; LanguagePack = 'LP'; CumulativeUpdate = 'CU' }
+      # Optional list of SharePoint Language Pack locale codes to install (e.g. @('fr-fr','es-es','de-de')).
+      # Each entry must match a sub-folder under <DestinationPath>\<Subfolders.LanguagePack>\ that
+      # contains the corresponding setup.exe. Leave empty (@()) or omit to skip language pack installation.
+      # Reference: https://learn.microsoft.com/en-us/sharepoint/install/install-or-uninstall-language-packs-subscription
+      LanguagePacks             = @('fr-fr')
+      # CU package: either an absolute path (used as-is, current default) or a relative path
+      # resolved under <DestinationPath>\<Subfolders.CumulativeUpdate>.
+      UberCumulativeUpdate      = '\\PDC1\Softwarepackages\SPS\CU\uber-subscription-kb5002773-fullfile-x64-glb.exe'
       FarmConfigDatabaseName    = 'DSPS_Admin_Config'
       AdminContentDatabaseName  = 'DSPS_Admin_Content'
       CentralAdministrationPort = '5555'
@@ -146,6 +170,13 @@
         CharacterSet   = '65001'
       }
       ServiceAppPoolName        = 'SharePointServiceApplications'
+      # Optional allowlist of Secrets.psd1 account names that SharePoint owns as Managed Accounts.
+      # Defaults to @('FARM', 'IISAPP', 'SEARCH') when omitted (the historical set). Add an entry
+      # here when a new SharePoint Managed Account is introduced (e.g. a dedicated Workflow or
+      # Custom Service Application service account). Accounts not listed here are NOT registered
+      # as SPManagedAccount resources, which keeps unrelated entries (PULLSETUP, IISPULLAPP, SQL,
+      # OOS, monitoring, ...) out of the SPS MOF.
+      ManagedAccounts           = @('FARM', 'IISAPP', 'SEARCH')
       WebApplications           = @(
         @{
           Name            = 'SharePoint'

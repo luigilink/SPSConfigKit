@@ -20,7 +20,7 @@
     ADC        = @{
       certificates = @(
         @{
-          Name         = 'DscPull'
+          Name         = 'DscPullCert'
           FriendlyName = 'DSCPull'
           CertPath     = '\\PDC1\Softwarepackages\DscPull.cer'
           PfxPath      = '\\PDC1\Softwarepackages\DscPull.pfx'

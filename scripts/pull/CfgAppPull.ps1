@@ -154,8 +154,10 @@ try {
 
     #For All DSC Pull servers
     Node $AllNodes.Where{ $_.IsPullServer }.NodeName {
-      # Get certificate information
-      $getCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'DscPull' }
+      # Get certificate information. The cert Name matches the matching Secrets.psd1
+      # entry ('DscPullCert') so the per-cert PFX password resolves through the same
+      # Get-Variable pattern used by CfgAppPdc.ps1 / CfgAppSps.ps1.
+      $getCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'DscPullCert' }
       #Retrieve the certificate Thumprint from CertPath
       try {
         $getSPCertificate = Get-CertThumbprint -CertPath "$($getCertInfo.CertPath)"
@@ -171,7 +173,10 @@ try {
           Location   = 'LocalMachine'
           Store      = 'My'
           Ensure     = 'Present'
-          Credential = $PFXCred
+          # Per-cert PFX password: resolves the PSCredential auto-materialised by the
+          # secrets loader (Name = $getCertInfo.Name, i.e. 'DscPullCert'). Replaces the
+          # removed shared $PFXCred variable, aligning PULL with PDC/SPS.
+          Credential = (Get-Variable -Name $getCertInfo.Name -ValueOnly)
           Exportable = $true
       }
       #Install Features

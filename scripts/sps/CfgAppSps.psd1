@@ -237,6 +237,13 @@
           Name            = 'SVCSearchService'
           DatabaseName    = 'DSPS_SCH_SearchService'
           SearchCenterUrl = 'https://sharepoint.contoso.com/search'
+          # First search index partition directory. Resolved at compile time as
+          # <Drives.Data>\<Topology.FirstPartitionDirectory> (e.g. F:\OfficeServer\Index)
+          # and fed to SPSearchTopology.FirstPartitionDirectory. Keep it on the data
+          # drive, NOT the system drive, so the index doesn't fill C:.
+          Topology        = @{
+            FirstPartitionDirectory = 'OfficeServer\Index'
+          }
           ContentSources  =
           @{
             LocalSharePointsites =

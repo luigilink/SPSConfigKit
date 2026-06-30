@@ -211,6 +211,12 @@ try {
       #Initialize the SQL Server Instance variable
       $sqlSPInstance = $Node.SQLInstanceName
       $sqlTcpPort = $Node.SQLTcpPort
+      # Derive the Windows service names from the instance name. The default
+      # instance (MSSQLSERVER) uses the well-known service names; a named instance
+      # uses the MSSQL$<Instance> / SQLAgent$<Instance> convention. SQLBrowser is
+      # always instance-independent.
+      $sqlEngineServiceName = if ($sqlSPInstance -eq 'MSSQLSERVER') { 'MSSQLSERVER' } else { "MSSQL`$$sqlSPInstance" }
+      $sqlAgentServiceName = if ($sqlSPInstance -eq 'MSSQLSERVER') { 'SQLSERVERAGENT' } else { "SQLAgent`$$sqlSPInstance" }
       # Default to a universally-declared sentinel resource so the configure-only
       # resources below don't dangle when IsSQLSetup=$False (pre-existing SQL).
       # When IsSQLSetup=$True, the override inside the if-block makes everything
@@ -261,14 +267,14 @@ try {
       #Configure the SQL Server service
       Service MIDDLEWARE_SqlServerSvcAutomaticRunning {
         DependsOn   = $dependsOnSQLSetup
-        Name        = 'MSSQLSERVER'
+        Name        = $sqlEngineServiceName
         StartupType = 'Automatic'
         State       = 'Running'
       }
       #Configure the SQL Agent service
       Service MIDDLEWARE_SqlAgentSvcAutomaticRunning {
         DependsOn   = $dependsOnSQLSetup
-        Name        = 'SQLSERVERAGENT'
+        Name        = $sqlAgentServiceName
         StartupType = 'Automatic'
         State       = 'Running'
       }

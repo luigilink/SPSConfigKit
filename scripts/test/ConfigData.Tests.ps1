@@ -52,10 +52,17 @@ BeforeDiscovery {
 
   # ---- product detection (drives which Describe blocks run) ----
   $hasSps = [bool]$cfg.NonNodeData.SharePoint
+  $hasSearchTopology = [bool]$cfg.NonNodeData.SharePoint.Services.SearchService
   $hasOos = [bool]$cfg.NonNodeData.OOS
   $hasSql = [bool]$cfg.NonNodeData.SQL -or ($cfg.AllNodes | Where-Object IsSQLServer)
   $hasAdc = [bool]$cfg.NonNodeData.ADC
   $hasAliases = [bool]$cfg.NonNodeData.SQLAlias
+  # Source media is only relevant to product configs that copy install bits
+  # (SPS / OOS / SQL). PDC and PULL declare no NonNodeData.SourcePath.
+  $needsSourcePath = [bool]($hasSps -or $hasOos -or $hasSql)
+  # Validate only the drive letters this config actually declares, so PDC
+  # (Data only) and PULL (Logs only) are not held to the SPS/SQL layout.
+  $declaredDrives = @($cfg.NonNodeData.Drives.Keys)
 
   # ---- data-driven test inputs ----
   $allNodes = @($cfg.AllNodes | Where-Object { $_.NodeName -and $_.NodeName -ne '*' })
@@ -206,16 +213,18 @@ Describe 'AllNodes integrity' {
 # 3. Common NonNodeData (Drives, SourcePath)
 # ===========================================================================
 Describe 'NonNodeData common' {
-  It 'declares NonNodeData.SourcePath' {
-    $script:ConfigData.NonNodeData.SourcePath | Should -Not -BeNullOrEmpty
+  Context 'Source media path' -Skip:(-not $needsSourcePath) {
+    It 'declares NonNodeData.SourcePath' {
+      $script:ConfigData.NonNodeData.SourcePath | Should -Not -BeNullOrEmpty
+    }
+
+    It 'NonNodeData.SourcePath looks like a UNC or rooted local path' {
+      $script:ConfigData.NonNodeData.SourcePath |
+        Should -Match '^(\\\\[^\\]+\\[^\\]+|[A-Za-z]:\\)'
+    }
   }
 
-  It 'NonNodeData.SourcePath looks like a UNC or rooted local path' {
-    $script:ConfigData.NonNodeData.SourcePath |
-      Should -Match '^(\\\\[^\\]+\\[^\\]+|[A-Za-z]:\\)'
-  }
-
-  It 'NonNodeData.Drives.<_> is formatted as <letter>:' -ForEach @('Data', 'Logs') {
+  It 'NonNodeData.Drives.<_> is formatted as <letter>:' -ForEach $declaredDrives {
     $drive = $script:ConfigData.NonNodeData.Drives.$_
     $drive | Should -Not -BeNullOrEmpty
     $drive | Should -Match '^[A-Z]:$'
@@ -295,6 +304,21 @@ Describe 'SharePoint configuration' -Skip:(-not $hasSps) {
     It 'CentralAdministrationPort is an integer in 1..65535' {
       [int]$script:ConfigData.NonNodeData.SharePoint.CentralAdministrationPort | Should -BeGreaterOrEqual 1
       [int]$script:ConfigData.NonNodeData.SharePoint.CentralAdministrationPort | Should -BeLessOrEqual 65535
+    }
+  }
+
+  Context 'Search service topology' -Skip:(-not $hasSearchTopology) {
+    It 'SearchService declares Topology.FirstPartitionDirectory' {
+      # CfgAppSps.ps1 builds SPSearchTopology.FirstPartitionDirectory as
+      # "<Drives.Data>\<SearchService.Topology.FirstPartitionDirectory>". A missing
+      # key silently compiles the index location to the bare drive root (e.g. F:\).
+      $script:ConfigData.NonNodeData.SharePoint.Services.SearchService.Topology.FirstPartitionDirectory |
+        Should -Not -BeNullOrEmpty
+    }
+    It 'FirstPartitionDirectory is a relative path (joined onto the data drive)' {
+      # It must NOT be rooted, otherwise "<Drive>:\<rooted path>" produces a broken path.
+      $fpd = $script:ConfigData.NonNodeData.SharePoint.Services.SearchService.Topology.FirstPartitionDirectory
+      [System.IO.Path]::IsPathRooted($fpd) | Should -BeFalse -Because 'it is concatenated after <Drives.Data>\'
     }
   }
 

@@ -1,4 +1,4 @@
-@{
+﻿@{
   serviceAccounts = @(
     # DO NOT USE THESE ACCOUNTS IN PRODUCTION ENVIRONMENTS. THESE ARE SAMPLE ACCOUNTS FOR DEMO PURPOSES ONLY.
     # DO NO RENAME Name value as it is used as reference in the DSC configuration scripts.

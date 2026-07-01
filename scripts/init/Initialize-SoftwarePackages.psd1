@@ -1,4 +1,4 @@
-
+﻿
 @{
   # Root folder of the local SoftwarePackages repository. Every entry below
   # uses a Path RELATIVE to this root. The companion SMB share (typically

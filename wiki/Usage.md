@@ -90,6 +90,20 @@ On success the output directory contains one `<NodeName>.mof` per node in
 `AllNodes` (plus `<NodeName>.mof.checksum` if you publish to a pull
 server).
 
+### 2b. Verify the MOFs are encrypted (mandatory gate)
+
+Before applying or publishing, confirm no credential was compiled in clear text:
+
+```powershell
+.\scripts\test\Invoke-MofEncryptionTest.ps1 -MofPath .\MOF
+```
+
+The guard-rail exits `1` if any `Password` value is not a CMS-encrypted blob, or
+if a credential-bearing MOF is missing the `ContentType="PasswordEncrypted"`
+marker. If it fails, run `scripts\init\Initialize-DscEncryption.ps1`, import the
+`.pfx` on every node, and recompile. See
+[Securing Credentials](./Securing-Credentials) for details.
+
 ## 3. Apply the MOFs
 
 ### Option A &mdash; push with `Start-DscConfiguration`

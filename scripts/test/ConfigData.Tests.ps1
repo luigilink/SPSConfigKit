@@ -170,8 +170,36 @@ Describe 'ConfigurationData file' {
   It 'declares the wildcard AllNodes baseline (NodeName = *)' {
     $wildcard = $script:ConfigData.AllNodes | Where-Object { $_.NodeName -eq '*' }
     $wildcard | Should -Not -BeNullOrEmpty
-    $wildcard.PSDscAllowPlainTextPassword | Should -BeTrue
     $wildcard.PSDscAllowDomainUser | Should -BeTrue
+  }
+
+  It 'wildcard encrypts credentials (CertificateFile + Thumbprint) — or is flagged as not yet encrypted' {
+    # Security-first: production MOFs MUST encrypt credentials, which
+    # Initialize-DscEncryption.ps1 wires up by setting PSDscAllowPlainTextPassword
+    # to $false on the wildcard block plus CertificateFile / Thumbprint. This test
+    # validates that encrypted branch. It does NOT require plain text (the previous
+    # behaviour, which wrongly failed a *secured* config). When the config is not
+    # yet encrypted (authoring/dev), the check is skipped with a reminder — the
+    # post-compile MofEncryption guard-rail is the hard gate.
+    $wildcard = $script:ConfigData.AllNodes | Where-Object { $_.NodeName -eq '*' }
+    if ($wildcard.PSDscAllowPlainTextPassword -eq $false) {
+      $wildcard.CertificateFile | Should -Not -BeNullOrEmpty -Because (
+        'PSDscAllowPlainTextPassword = $false requires a CertificateFile so credentials are encrypted at compile time'
+      )
+      $wildcard.Thumbprint | Should -Not -BeNullOrEmpty -Because (
+        'PSDscAllowPlainTextPassword = $false requires the encryption certificate Thumbprint'
+      )
+      [string]$wildcard.Thumbprint | Should -Match '^[0-9A-Fa-f]{40}$' -Because (
+        'an X.509 certificate thumbprint is 40 hexadecimal characters'
+      )
+    }
+    else {
+      Set-ItResult -Skipped -Because (
+        'credentials are NOT encrypted (PSDscAllowPlainTextPassword is $true or absent). ' +
+        'Run scripts/init/Initialize-DscEncryption.ps1 before compiling production MOFs; ' +
+        'the post-compile MofEncryption guard-rail enforces encryption on the actual MOFs.'
+      )
+    }
   }
 }
 

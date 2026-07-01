@@ -1,0 +1,23 @@
+# EditorConfig — https://editorconfig.org
+# Locks encoding and formatting so the repo stays consistent across contributors.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# PowerShell scripts and data files MUST be UTF-8 with BOM: Windows PowerShell 5.1
+# reads a BOM-less file as ANSI (Windows-1252), which corrupts any non-ASCII
+# character (accents, em dashes, ...) at runtime on the farm.
+[*.{ps1,psd1,psm1}]
+charset = utf-8-bom
+
+# Markdown, YAML and JSON stay BOM-less: YAML linters and dsc.exe reject a BOM,
+# and Markdown has no need for one.
+[*.{md,yml,yaml,json}]
+charset = utf-8
+trim_trailing_whitespace = false

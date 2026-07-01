@@ -1,4 +1,4 @@
-@{
+﻿@{
     # -----------------------------------------------------------------------
     # SPSConfigKit — node prerequisites manifest (single source of truth).
     #

@@ -39,6 +39,36 @@ This is the list of DSC Modules required for this kit:
 
 You can find documention for each module on the repository [dsccommunity](https://github.com/dsccommunity)
 
+## Security — credentials are encrypted, plain-text is not supported
+
+SPSConfigKit compiles credentials (service accounts, farm passphrase, PFX
+passwords) into the MOF for every node. **These MUST be encrypted with a DSC
+document-encryption certificate — compiling them in clear text is not a supported
+configuration.** A MOF with clear-text passwords is a credential-theft primitive:
+anyone who can read the file on the authoring host, the pull server, or the SMB
+share gets domain service-account passwords.
+
+The kit ships everything needed and the workflow makes it mandatory:
+
+1. **Generate the certificate** with `scripts/init/Initialize-DscEncryption.ps1`.
+   It exports the `.cer` / `.pfx` to the share and **patches every `Cfg*.psd1`**
+   so the wildcard node carries `PSDscAllowPlainTextPassword = $false` plus the
+   `CertificateFile` / `Thumbprint` pointing at the encryption cert.
+2. **Import the `.pfx`** into `Cert:\LocalMachine\My` on every target node
+   (handled by `scripts/init/Initialize-DscNode.ps1`).
+3. **Compile** — the resulting MOFs carry CMS-encrypted credential blobs and a
+   `ContentType="PasswordEncrypted"` marker, decryptable only by the node holding
+   the private key.
+4. **Verify** with the post-compile guard-rail, which fails if any credential
+   slipped through in clear text:
+
+   ```powershell
+   .\scripts\test\Invoke-MofEncryptionTest.ps1 -MofPath .\scripts\sps\MOF
+   ```
+
+See the [Securing Credentials](https://github.com/luigilink/SPSConfigKit/wiki/Securing-Credentials)
+wiki page for the full walkthrough, certificate rotation, and troubleshooting.
+
 ## Documentation
 
 For detailed usage, configuration, and getting started information, visit the [SPSConfigKit Wiki](https://github.com/luigilink/SPSConfigKit/wiki)

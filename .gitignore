@@ -7,6 +7,3 @@
 # Ignore the real per-domain pull-server defaults (holds registration keys).
 # Only the .sample template is tracked.
 scripts/pull/CfgLcmPull.DomainDefaults.psd1
-
-# Ignore .gitignore file itself
-.gitignore

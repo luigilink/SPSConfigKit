@@ -1219,23 +1219,21 @@ try {
 
     #For All Office Online servers
     Node $AllNodes.Where{ ($_.IsOOSServer) }.NodeName {
-      if ($Node.IsADSServer) {
-        $dependsOnSPSSetup = '[WaitForADDomain]WaitForDCReady'
+      # OOS servers are always domain-joined member servers in this kit (the AD DC
+      # is provisioned by CfgAppPdc.ps1, never co-located on an OOS box). Join the
+      # domain, then reboot before anything else runs on the node.
+      Computer JoinDomain {
+        Name       = $Node.NodeName
+        DomainName = $ConfigurationData.NonNodeData.DomainName
+        Credential = $ADSETUP
       }
-      else {
-        Computer JoinDomain {
-          Name       = $Node.NodeName
-          DomainName = $ConfigurationData.NonNodeData.DomainName
-          Credential = $ADSETUP
-        }
 
-        PendingReboot RebootOnSignalFromJoinDomain {
-          Name             = "RebootOnSignalFromJoinDomain"
-          SkipCcmClientSDK = $true
-          DependsOn        = "[Computer]JoinDomain"
-        }
-        $dependsOnSPSSetup = '[PendingReboot]RebootOnSignalFromJoinDomain'
+      PendingReboot RebootOnSignalFromJoinDomain {
+        Name             = "RebootOnSignalFromJoinDomain"
+        SkipCcmClientSDK = $true
+        DependsOn        = "[Computer]JoinDomain"
       }
+      $dependsOnSPSSetup = '[PendingReboot]RebootOnSignalFromJoinDomain'
       Group AddSPSetupAccountToAdminGroup {
         GroupName            = "Administrators"
         Ensure               = "Present"

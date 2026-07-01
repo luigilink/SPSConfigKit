@@ -14,6 +14,44 @@
   has been advised of the possibility of such damages
   ---------------------------------------------------------------------------------
 #>
+#Requires -Version 5.1
+#Requires -RunAsAdministrator
+<#
+  .SYNOPSIS
+  Compiles the DSC pull server configuration: WMF 5.1 HTTPS pull server
+  (xDscWebService) published on port 443, IIS hardening, registration key file,
+  and the firewall rule consumed by every managed node in the sample lab.
+
+  .DESCRIPTION
+  Imports node + non-node data from a .psd1 file and secret material from
+  Secrets.psd1, then compiles MOF files for every node defined in AllNodes.
+  The script is idempotent: re-running it simply regenerates the MOFs in
+  the output directory and refreshes the checksums.
+
+  .PARAMETER inputFile
+  Full path to the ConfigurationData .psd1. Defaults to CfgAppPull.psd1 in
+  the same directory as the script.
+
+  .PARAMETER secretsFile
+  Full path to the Secrets.psd1. Defaults to ..\Secrets.psd1 relative to
+  the script directory.
+
+  .PARAMETER OutputPath
+  Directory where the compiled MOF files (and checksums) are written.
+  Defaults to <scriptDir>\MOF. The directory is created if missing.
+
+  .EXAMPLE
+  .\CfgAppPull.ps1
+
+  .EXAMPLE
+  .\CfgAppPull.ps1 -inputFile .\CfgAppPull.psd1 -secretsFile ..\Secrets.psd1 -OutputPath C:\DSC\MOF
+
+  .NOTES
+  Project : SPSConfigKit
+  Requires: PowerShell 5.1, RunAsAdministrator, and the DSC modules listed in the Import-DscResource calls below.
+#>
+
+[CmdletBinding()]
 param(
   [Parameter()]
   [System.String]
@@ -21,7 +59,11 @@ param(
 
   [Parameter()]
   [System.String]
-  $secretsFile
+  $secretsFile,
+
+  [Parameter()]
+  [System.String]
+  $OutputPath
 )
 
 try {
@@ -38,40 +80,46 @@ try {
 
   #Import configuration data from the specified .psd1 file
   if ([string]::IsNullOrWhiteSpace($inputFile)) {
-    write-host "No input file provided. Try to use CfgAppPull.psd1 in the same directory as the script."
+    Write-Host 'No input file provided. Try to use CfgAppPull.psd1 in the same directory as the script.'
     $inputFile = Join-Path -Path $scriptBasePath -ChildPath 'CfgAppPull.psd1'
   }
   if (Test-Path $inputFile) {
-    write-host "Importing configuration data from $inputFile"
-    $configurationData = Import-PowerShellDataFile -Path  $inputFile
+    Write-Host "Importing configuration data from $inputFile"
+    $configurationData = Import-PowerShellDataFile -Path $inputFile
   }
   else {
-    Throw "Missing $inputFile"
+    throw "Missing $inputFile"
   }
 
   if ([string]::IsNullOrWhiteSpace($secretsFile)) {
-    write-host "No secrets file provided. Try to use Secrets.psd1 in the parent directory of the script."
+    Write-Host 'No secrets file provided. Try to use Secrets.psd1 in the parent directory of the script.'
     $secretsFile = Join-Path -Path (Split-Path -Path $scriptBasePath -Parent) -ChildPath 'Secrets.psd1'
   }
   if (Test-Path $secretsFile) {
-    write-host "Importing secrets data from $secretsFile"
-    $secretsData = Import-PowerShellDataFile -Path  $secretsFile
+    Write-Host "Importing secrets data from $secretsFile"
+    $secretsData = Import-PowerShellDataFile -Path $secretsFile
     #Initialize each secret as a variable
     $serviceAccounts = $secretsData.serviceAccounts
     foreach ($serviceAccount in $serviceAccounts) {
       $username = $serviceAccount.UserName
       $password = ConvertTo-SecureString $serviceAccount.Password -AsPlainText -Force
-      $credential = New-Object -Typename System.Management.Automation.PSCredential `
-        -Argumentlist $username, $password
+      $credential = New-Object -TypeName System.Management.Automation.PSCredential `
+        -ArgumentList $username, $password
       New-Variable -Name $serviceAccount.Name -Value $credential -Force
     }
   }
   else {
-    Throw "Missing $secretsFile"
+    throw "Missing $secretsFile"
   }
 
-  #Initialization of the output path for the generated MOF files
-  $mofOutputPath = Join-Path -Path $scriptBasePath -ChildPath 'MOF'
+  #Initialization of the output path for the generated MOF files.
+  #Honour the -OutputPath parameter when supplied; otherwise default to <scriptDir>\MOF.
+  if ([string]::IsNullOrWhiteSpace($OutputPath)) {
+    $mofOutputPath = Join-Path -Path $scriptBasePath -ChildPath 'MOF'
+  }
+  else {
+    $mofOutputPath = $OutputPath
+  }
   if (-not (Test-Path -Path $mofOutputPath)) {
     New-Item -Path $mofOutputPath -ItemType Directory | Out-Null
   }
@@ -94,8 +142,8 @@ try {
       }
     }
     catch {
-      write-warning $_.Exception.Message
-      write-warning "$CertPath was not found"
+      Write-Warning $_.Exception.Message
+      Write-Warning "$CertPath was not found"
       return @{
         Error      = $true
         Thumbprint = "0000000000000000000000000000000000000000"
@@ -154,8 +202,10 @@ try {
 
     #For All DSC Pull servers
     Node $AllNodes.Where{ $_.IsPullServer }.NodeName {
-      # Get certificate information
-      $getCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'DscPull' }
+      # Get certificate information. The cert Name matches the matching Secrets.psd1
+      # entry ('DscPullCert') so the per-cert PFX password resolves through the same
+      # Get-Variable pattern used by CfgAppPdc.ps1 / CfgAppSps.ps1.
+      $getCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'DscPullCert' }
       #Retrieve the certificate Thumprint from CertPath
       try {
         $getSPCertificate = Get-CertThumbprint -CertPath "$($getCertInfo.CertPath)"
@@ -171,7 +221,10 @@ try {
           Location   = 'LocalMachine'
           Store      = 'My'
           Ensure     = 'Present'
-          Credential = $PFXCred
+          # Per-cert PFX password: resolves the PSCredential auto-materialised by the
+          # secrets loader (Name = $getCertInfo.Name, i.e. 'DscPullCert'). Replaces the
+          # removed shared $PFXCred variable, aligning PULL with PDC/SPS.
+          Credential = (Get-Variable -Name $getCertInfo.Name -ValueOnly)
           Exportable = $true
       }
       #Install Features
@@ -323,12 +376,20 @@ try {
       }
     }
   }
-  #Run the AppPull configuration with the provided ConfigurationData
+  #Run the CfgAppPull configuration with the provided ConfigurationData
+  # Note: Import-PowerShellDataFile returns hashtables, so use ForEach-Object
+  # (hashtable dot-syntax) instead of Select-Object -ExpandProperty.
+  $nodeList = ($configurationData.AllNodes | Where-Object { $_.NodeName -ne '*' } | ForEach-Object { $_.NodeName }) -join ', '
+  Write-Host ("[{0}] Compiling CfgAppPull for node(s) : {1}" -f (Get-Date -Format 'o'), $nodeList)
+  Write-Host ("[{0}] MOF output path            : {1}" -f (Get-Date -Format 'o'), $mofOutputPath)
   CfgAppPull -ConfigurationData $ConfigurationData -OutputPath $mofOutputPath
 
-  #Checksum to the generated MOF files
-  New-DscChecksum -Force -Path $mofOutputPath -verbose
+  #Checksum the generated MOF files
+  New-DscChecksum -Force -Path $mofOutputPath -Verbose
+  Write-Host ("[{0}] Compilation complete." -f (Get-Date -Format 'o'))
 }
 catch {
-  throw $_
+  # Preserve full error context (script, line number, exception message) before rethrowing.
+  Write-Error -Message ("CfgAppPull compilation failed at {0}:{1} - {2}" -f $_.InvocationInfo.ScriptName, $_.InvocationInfo.ScriptLineNumber, $_.Exception.Message) -ErrorAction Continue
+  throw
 }

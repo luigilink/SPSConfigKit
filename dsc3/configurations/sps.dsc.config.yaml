@@ -11,6 +11,12 @@
 # exercised end to end while the v3 line is built out. Values mirror the contoso.com sample
 # used by the v1/v2 line (see ../scripts/sps/CfgAppSps.psd1).
 #
+# ADAPTER NOTE: SharePointDsc (and SqlServerDsc, ActiveDirectoryDsc, ...) are MOF-based PSDSC
+# resources that only load in Windows PowerShell 5.1. They must therefore be driven through the
+# 'Microsoft.Windows/WindowsPowerShell' adapter (which hosts them in Windows PowerShell), NOT the
+# 'Microsoft.Adapters/PowerShell' adapter (PowerShell 7, class-based resources only) — the latter
+# reports 'module not found' for SharePointDsc because PS7 cannot see the 5.1 module path.
+#
 # Validate : dsc config get  --file dsc3/configurations/sps.dsc.config.yaml
 # What-if  : dsc config test --file dsc3/configurations/sps.dsc.config.yaml
 # Apply    : dsc config set  --file dsc3/configurations/sps.dsc.config.yaml
@@ -39,11 +45,12 @@ parameters:
       description: SharePoint Server SE product key. Replace before applying — do NOT commit a real key.
 
 resources:
-  # The PowerShell adapter hosts one or more class/MOF-based PSDSC resources. Each nested
-  # resource uses the familiar <ModuleName>/<ResourceName> type and the same properties the
-  # v1/v2 configuration script sets today.
+  # The Windows PowerShell adapter hosts one or more class/MOF-based PSDSC resources IN
+  # Windows PowerShell 5.1 — required for SharePointDsc, which does not load under PowerShell 7.
+  # Each nested resource uses the familiar <ModuleName>/<ResourceName> type and the same
+  # properties the v1/v2 configuration script sets today.
   - name: SharePoint Server SE
-    type: Microsoft.DSC/PowerShell
+    type: Microsoft.Windows/WindowsPowerShell
     properties:
       resources:
         - name: Install prerequisites

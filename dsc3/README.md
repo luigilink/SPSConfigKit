@@ -24,10 +24,21 @@ one replacing the other.
 ## Reusing existing PSDSC resources
 
 DSC v3 can drive the existing class/MOF-based PowerShell resources
-(`SharePointDsc`, `SqlServerDsc`, `ActiveDirectoryDsc`, …) through the built-in
-**`Microsoft.DSC/PowerShell`** adapter. This lets the v3 line reuse the same resource logic the
-v1/v2 line relies on, so the effort concentrates on the **orchestration layer** (the
-configuration documents) rather than rewriting every resource.
+(`SharePointDsc`, `SqlServerDsc`, `ActiveDirectoryDsc`, …) through a **PowerShell
+adapter**. Two adapters exist, and picking the right one matters:
+
+| Adapter | Hosts resources in | Use for |
+| --- | --- | --- |
+| `Microsoft.Windows/WindowsPowerShell` | **Windows PowerShell 5.1** | `SharePointDsc`, `SqlServerDsc`, `ActiveDirectoryDsc` and every other MOF-based PSDSC resource this kit already pins |
+| `Microsoft.Adapters/PowerShell` (formerly `Microsoft.DSC/PowerShell`) | PowerShell 7 | PS7 **class-based** resources only |
+
+> **SharePointDsc requires the `Microsoft.Windows/WindowsPowerShell` adapter.**
+> It is a MOF-based module that only loads under Windows PowerShell 5.1, so the
+> PowerShell 7 adapter reports `SharePointDsc/SPInstall module not found` (PS7
+> cannot see the 5.1 module path). Reusing the adapter lets the v3 line keep the
+> same resource logic as the v1/v2 line, so the effort concentrates on the
+> **orchestration layer** (the configuration documents) rather than rewriting
+> every resource.
 
 Reference: <https://learn.microsoft.com/en-us/powershell/dsc/>
 
@@ -44,9 +55,13 @@ dsc3/
 ## Prerequisites (authoring / target host)
 
 - **DSC v3** (`dsc.exe`) — install from <https://github.com/PowerShell/DSC/releases>
-- **PowerShell 7.4+**
-- For the `Microsoft.DSC/PowerShell` adapter: the same pinned PSDSC modules used by the
-  v1/v2 line (see [`../scripts/init/Initialize-DscNode.psd1`](../scripts/init/Initialize-DscNode.psd1)).
+  (on Windows Server, use the `DSC-<ver>-x86_64-pc-windows-msvc.zip` asset).
+- **Windows PowerShell 5.1** — required by the `Microsoft.Windows/WindowsPowerShell`
+  adapter that hosts SharePointDsc. (`dsc.exe` itself also works with PowerShell 7.4+
+  for the class-based adapter, but SharePointDsc runs under 5.1.)
+- The same pinned PSDSC modules used by the v1/v2 line, installed in the Windows
+  PowerShell 5.1 module path (see
+  [`../scripts/init/Initialize-DscNode.psd1`](../scripts/init/Initialize-DscNode.psd1)).
 
 ## Quick start (once a configuration document exists)
 

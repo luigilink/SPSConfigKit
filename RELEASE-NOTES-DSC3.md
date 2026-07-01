@@ -15,8 +15,10 @@
     the reuse of existing PSDSC resources through the `Microsoft.DSC/PowerShell` adapter,
     prerequisites and the `dsc config get/test/set` workflow.
   - `dsc3/configurations/sps.dsc.config.yaml`, a starter SharePoint Server SE
-    configuration document that drives `SharePointDsc` resources via the PowerShell
-    adapter (parameterised binary directory and product key).
+    configuration document that drives `SharePointDsc` resources through the
+    `Microsoft.Windows/WindowsPowerShell` adapter (Windows PowerShell 5.1, the
+    only host SharePointDsc loads under), with a parameterised binary directory
+    and product key.
   - `dsc3/resources/` placeholder for future DSC v3 resource manifests.
 - Root README compatibility matrix describing the two release lines and their tag schemes.
 - `.github/workflows/release.yml` extended to a two-channel release workflow: `v*` tags

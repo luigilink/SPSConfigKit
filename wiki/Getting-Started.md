@@ -129,12 +129,22 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
 3. **Generate the DSC document-encryption certificate** (one-time, on the
    authoring host or on a designated certificate host):
 
+   > [!IMPORTANT]
+   > This step is **mandatory**, not optional. It encrypts every credential the
+   > kit compiles into the MOFs. Skipping it leaves service-account passwords and
+   > the farm passphrase in clear text inside the MOF files — an unsupported and
+   > dangerous configuration. See [Securing Credentials](./Securing-Credentials).
+
    ```powershell
-   .\scripts\init\Initialize-DscEncryption.ps1
+   $pfxPwd = Read-Host 'PFX password' -AsSecureString
+   .\scripts\init\Initialize-DscEncryption.ps1 -PfxPassword $pfxPwd
    ```
 
-   This produces `DscEncryption.cer` and `DscEncryption.pfx` and copies them
-   to the share defined in `Initialize-DscNode.psd1` (`SourcePath`).
+   This produces `DscEncryption.cer` and `DscEncryption.pfx`, copies them to the
+   share defined in `Initialize-DscNode.psd1` (`SourcePath`), and patches every
+   `Cfg*.psd1` so the wildcard node sets `PSDscAllowPlainTextPassword = $false`
+   with the certificate's `CertificateFile` / `Thumbprint`. After this,
+   compilation **requires** every node to hold the certificate (next step).
 
 4. **Bootstrap every target node** (run on each SharePoint / OOS server):
 
@@ -174,6 +184,17 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    for the full check list.
 
 8. **Compile and apply** the MOFs. See the [Usage](./Usage) page.
+
+9. **Verify the MOFs are encrypted** before shipping them, as a post-compile
+   security gate:
+
+   ```powershell
+   .\scripts\test\Invoke-MofEncryptionTest.ps1 -MofPath .\scripts\sps\MOF
+   ```
+
+   The Pester guard-rail fails (exit code `1`) if any credential was compiled in
+   clear text — the safety net that confirms step 3 actually took effect. See
+   [Securing Credentials](./Securing-Credentials).
 
 ## Next step
 

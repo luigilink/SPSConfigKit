@@ -11,11 +11,19 @@
 # exercised end to end while the v3 line is built out. Values mirror the contoso.com sample
 # used by the v1/v2 line (see ../scripts/sps/CfgAppSps.psd1).
 #
-# ADAPTER NOTE: SharePointDsc (and SqlServerDsc, ActiveDirectoryDsc, ...) are MOF-based PSDSC
-# resources that only load in Windows PowerShell 5.1. They must therefore be driven through the
-# 'Microsoft.Windows/WindowsPowerShell' adapter (which hosts them in Windows PowerShell), NOT the
-# 'Microsoft.Adapters/PowerShell' adapter (PowerShell 7, class-based resources only) — the latter
-# reports 'module not found' for SharePointDsc because PS7 cannot see the 5.1 module path.
+# ADAPTER NOTE: SharePointDsc (and SqlServerDsc, ActiveDirectoryDsc, ...) are MOF/class-based
+# PSDSC resources that only load in Windows PowerShell 5.1. They must therefore be driven through
+# the 'Microsoft.Adapters/WindowsPowerShell' adapter (which hosts them in Windows PowerShell), NOT
+# the 'Microsoft.Adapters/PowerShell' adapter (PowerShell 7, class-based PS7 resources only) — the
+# latter reports 'module not found' for SharePointDsc because PS7 cannot see the 5.1 module path.
+#
+# KNOWN CONSTRAINT: SharePointDsc 5.x is class-based, and the adapter loads/instantiates the
+# resource class to enumerate it. Loading the class triggers a SharePoint snap-in import, which
+# only succeeds on a host where SharePoint Server is actually installed. On a bare authoring host
+# 'dsc config get/test/set' fails during the adapter cache refresh with
+# "Import-SPPowerShellSnapIn ... is not recognized". This differs from the v1/v2 line, where MOF
+# compilation only reads the resource schema and therefore works without SharePoint present. Run
+# the SharePoint document against a node that already has the SharePoint binaries installed.
 #
 # Validate : dsc config get  --file dsc3/configurations/sps.dsc.config.yaml
 # What-if  : dsc config test --file dsc3/configurations/sps.dsc.config.yaml
@@ -50,7 +58,7 @@ resources:
   # Each nested resource uses the familiar <ModuleName>/<ResourceName> type and the same
   # properties the v1/v2 configuration script sets today.
   - name: SharePoint Server SE
-    type: Microsoft.Windows/WindowsPowerShell
+    type: Microsoft.Adapters/WindowsPowerShell
     properties:
       resources:
         - name: Install prerequisites

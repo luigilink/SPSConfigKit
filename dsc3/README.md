@@ -29,16 +29,39 @@ adapter**. Two adapters exist, and picking the right one matters:
 
 | Adapter | Hosts resources in | Use for |
 | --- | --- | --- |
-| `Microsoft.Windows/WindowsPowerShell` | **Windows PowerShell 5.1** | `SharePointDsc`, `SqlServerDsc`, `ActiveDirectoryDsc` and every other MOF-based PSDSC resource this kit already pins |
-| `Microsoft.Adapters/PowerShell` (formerly `Microsoft.DSC/PowerShell`) | PowerShell 7 | PS7 **class-based** resources only |
+| `Microsoft.Adapters/WindowsPowerShell` | **Windows PowerShell 5.1** | `SharePointDsc`, `SqlServerDsc`, `ActiveDirectoryDsc` and every other MOF/class-based PSDSC resource this kit already pins |
+| `Microsoft.Adapters/PowerShell` | PowerShell 7 | PS7 **class-based** resources only |
 
-> **SharePointDsc requires the `Microsoft.Windows/WindowsPowerShell` adapter.**
-> It is a MOF-based module that only loads under Windows PowerShell 5.1, so the
+> The older adapter names `Microsoft.DSC/PowerShell` and
+> `Microsoft.Windows/WindowsPowerShell` still work but are deprecated in DSC 3.2+;
+> prefer the `Microsoft.Adapters/*` names above.
+
+> **SharePointDsc requires the `Microsoft.Adapters/WindowsPowerShell` adapter.**
+> It is a class/MOF-based module that only loads under Windows PowerShell 5.1, so the
 > PowerShell 7 adapter reports `SharePointDsc/SPInstall module not found` (PS7
 > cannot see the 5.1 module path). Reusing the adapter lets the v3 line keep the
 > same resource logic as the v1/v2 line, so the effort concentrates on the
 > **orchestration layer** (the configuration documents) rather than rewriting
 > every resource.
+
+### Known constraint — SharePointDsc needs SharePoint present to load
+
+SharePointDsc 5.x is **class-based**. The Windows PowerShell adapter loads and
+instantiates the resource class to enumerate it during its cache refresh, and
+loading the class triggers a **SharePoint snap-in import**. That import only
+succeeds on a host where SharePoint Server is actually installed, so on a bare
+authoring host `dsc config get/test/set` fails during the cache refresh with:
+
+```
+Import-SPPowerShellSnapIn ... is not recognized as the name of a cmdlet ...
+```
+
+This is a genuine difference from the v1/v2 line: **MOF compilation only reads the
+resource schema** (works without SharePoint), whereas the **DSC v3 adapter actually
+loads the resource** (needs SharePoint present). Run the SharePoint document on a
+node that already has the SharePoint binaries installed. To validate the
+`dsc.exe → adapter` pipeline itself on a bare host, use the benign smoke-test
+document below.
 
 Reference: <https://learn.microsoft.com/en-us/powershell/dsc/>
 
@@ -48,7 +71,8 @@ Reference: <https://learn.microsoft.com/en-us/powershell/dsc/>
 dsc3/
 ├── README.md                 # this file
 ├── configurations/           # DSC v3 configuration documents (YAML/JSON)
-│   └── sps.dsc.config.yaml    # sample SharePoint SE farm document (starter)
+│   ├── sps.dsc.config.yaml    # sample SharePoint SE farm document (starter)
+│   └── smoke.dsc.config.yaml  # benign adapter smoke test (no SharePoint required)
 └── resources/                # custom resource manifests (as the line grows)
 ```
 

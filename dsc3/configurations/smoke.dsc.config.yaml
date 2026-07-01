@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://aka.ms/dsc/schemas/v3/bundled/config/document.json
+#
+# SPSConfigKit — DSC v3 adapter smoke test (benign).
+#
+# Purpose: validate the `dsc.exe -> Microsoft.Adapters/WindowsPowerShell -> PSDSC resource`
+# pipeline WITHOUT requiring SharePoint to be installed. It reads a single environment
+# variable through the PSDscResources/Environment resource — no changes, no SharePoint.
+#
+# Run: dsc config get --file dsc3/configurations/smoke.dsc.config.yaml
+#
+# Expected: a result object for the PATH environment variable, proving the Windows
+# PowerShell adapter can host a pinned PSDSC resource.
+#
+# NOTE: the adapter refreshes its resource cache on first use. If SharePointDsc is installed
+# on the same host (e.g. a farm node bootstrapped by Initialize-DscNode), that global refresh
+# can still fail with the "Import-SPPowerShellSnapIn ... is not recognized" error described in
+# README.md, because loading the class-based SharePointDsc resource imports the SharePoint
+# snap-in. For a clean adapter validation, run this on a host that has PSDscResources installed
+# but NOT SharePointDsc.
+
+$schema: https://aka.ms/dsc/schemas/v3/bundled/config/document.json
+
+metadata:
+  project: SPSConfigKit
+  line: dsc-v3
+  status: experimental
+  description: Benign adapter smoke test (reads the PATH environment variable).
+
+resources:
+  - name: Adapter smoke test
+    type: Microsoft.Adapters/WindowsPowerShell
+    properties:
+      resources:
+        - name: Read PATH
+          type: PSDscResources/Environment
+          properties:
+            Name: Path
+            Ensure: Present

@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `scripts/test/ConfigData.Tests.ps1`
+  - The wildcard AllNodes baseline check no longer requires
+    `PSDscAllowPlainTextPassword = $true` — which wrongly failed a *secured*
+    configuration (the state left by `Initialize-DscEncryption.ps1`). It now
+    validates the encrypted branch instead: when
+    `PSDscAllowPlainTextPassword = $false`, the wildcard must carry a
+    `CertificateFile` and a 40-hex-char `Thumbprint`; when the config isn't yet
+    encrypted it is skipped with a reminder (the post-compile MofEncryption
+    guard-rail is the hard gate).
 - **Encoding** — every `*.ps1` / `*.psd1` under `scripts/` is now UTF-8 **with BOM**
   (13 previously BOM-less files converted; the 4 already-BOM files unchanged), so
   Windows PowerShell 5.1 always reads them as UTF-8. No functional content change.

@@ -413,6 +413,7 @@ $resRows
 <style>
   :root {
     --background: hsl(216 13% 15%);
+    --bg-glow: hsl(216 20% 22%);
     --card: hsl(216 13% 13%);
     --card-2: hsl(216 13% 17%);
     --foreground: hsl(219 18% 82%);
@@ -423,21 +424,60 @@ $resRows
     --ok: hsl(152 58% 45%);
     --warn: hsl(38 92% 55%);
     --err: hsl(3 85% 56%);
+    --shadow: 0 10px 30px rgba(0,0,0,.35);
+    --card-tint: rgba(255,255,255,.04);
+    --card-tint-2: rgba(255,255,255,.01);
+    --hover: rgba(255,255,255,.02);
     --radius: 14px;
+  }
+  html[data-theme="light"] {
+    --background: hsl(210 20% 97%);
+    --bg-glow: hsl(213 60% 92%);
+    --card: hsl(0 0% 100%);
+    --card-2: hsl(214 20% 96%);
+    --foreground: hsl(216 25% 22%);
+    --muted-fg: hsl(216 12% 42%);
+    --border: hsl(216 15% 85%);
+    --primary: hsl(213 82% 48%);
+    --primary-2: hsl(199 85% 42%);
+    --ok: hsl(152 55% 38%);
+    --warn: hsl(35 85% 44%);
+    --err: hsl(3 72% 48%);
+    --shadow: 0 8px 24px rgba(20,35,60,.10);
+    --card-tint: rgba(255,255,255,0);
+    --card-tint-2: rgba(255,255,255,0);
+    --hover: rgba(20,40,80,.03);
   }
   * { box-sizing: border-box; }
   body {
     margin: 0; padding: 32px;
     background:
-      radial-gradient(1200px 600px at 15% -10%, hsl(216 20% 22%) 0%, transparent 60%),
+      radial-gradient(1200px 600px at 15% -10%, var(--bg-glow) 0%, transparent 60%),
       var(--background);
     color: var(--foreground);
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
+    transition: background-color .2s ease, color .2s ease;
   }
   .mono { font-family: 'Cascadia Code', 'Consolas', ui-monospace, monospace; font-size: 12.5px; }
   a { color: inherit; }
-  header.page { margin-bottom: 26px; }
+  header.page { margin-bottom: 26px; position: relative; }
+  .theme-toggle {
+    position: absolute; top: 0; right: 0;
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--card-2); color: var(--muted-fg);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer;
+    box-shadow: var(--shadow); transition: color .15s ease, border-color .15s ease;
+  }
+  .theme-toggle:hover { color: var(--foreground); border-color: var(--primary); }
+  .theme-toggle .icon { width: 15px; height: 15px; }
+  .theme-toggle .icon.moon { display: none; }
+  html[data-theme="light"] .theme-toggle .icon.sun { display: none; }
+  html[data-theme="light"] .theme-toggle .icon.moon { display: inline; }
+  .theme-toggle .lbl-dark { display: none; }
+  html[data-theme="light"] .theme-toggle .lbl-dark { display: inline; }
+  html[data-theme="light"] .theme-toggle .lbl-light { display: none; }
   header.page .eyebrow {
     font-family: 'Cascadia Code','Consolas',ui-monospace,monospace;
     text-transform: uppercase; letter-spacing: .18em; font-size: 11px;
@@ -454,9 +494,9 @@ $resRows
   @media (max-width: 860px) { .grid-top { grid-template-columns: 1fr; } }
 
   .card {
-    background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(255,255,255,.01)), var(--card);
+    background: linear-gradient(180deg, var(--card-tint), var(--card-tint-2)), var(--card);
     border: 1px solid var(--border); border-radius: var(--radius);
-    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    box-shadow: var(--shadow);
   }
   .summary-card { padding: 22px; display: flex; align-items: center; gap: 22px; }
   .donut-wrap { position: relative; width: 150px; height: 150px; flex: 0 0 auto; }
@@ -488,7 +528,7 @@ $resRows
   }
   table.nodes tbody td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
   table.nodes tbody tr:last-child td { border-bottom: none; }
-  table.nodes tbody tr:hover { background: rgba(255,255,255,.02); }
+  table.nodes tbody tr:hover { background: var(--hover); }
   .node-link { text-decoration: none; font-weight: 600; }
   .node-link:hover { color: var(--primary); }
 
@@ -526,11 +566,16 @@ $resRows
   .muted { color: var(--muted-fg); }
 
   footer.page { margin-top: 30px; color: var(--muted-fg); font-size: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
-  @media print { body { background: #fff; color: #000; } .card, details .node-body, summary { box-shadow: none; } }
+  @media print { body { background: #fff; color: #000; } .card, details .node-body, summary { box-shadow: none; } .theme-toggle { display: none; } }
 </style>
 </head>
 <body>
   <header class="page">
+    <button type="button" class="theme-toggle" id="themeToggle" aria-label="Toggle light / dark theme">
+      <svg class="icon sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      <svg class="icon moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      <span class="lbl-light">Light</span><span class="lbl-dark">Dark</span>
+    </button>
     <p class="eyebrow">SPSConfigKit · DSC Pull Server</p>
     <h1>$(ConvertTo-HtmlText $Heading)</h1>
     <p class="sub">Compliance snapshot generated $generated · $total node(s)</p>
@@ -589,6 +634,33 @@ $detailsHtml
     <span>Generated by SPSConfigKit · New-SPSDscDashboard.ps1</span>
     <span class="mono">Source: PSDSCPullServer.svc (OData)</span>
   </footer>
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var KEY = 'spsconfigkit-dsc-theme';
+      function apply(theme) {
+        if (theme === 'light') { root.setAttribute('data-theme', 'light'); }
+        else { root.removeAttribute('data-theme'); }
+      }
+      // Initial theme: saved choice, else follow the OS preference.
+      var saved = null;
+      try { saved = localStorage.getItem(KEY); } catch (e) { }
+      if (saved) {
+        apply(saved);
+      } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+        apply('light');
+      }
+      var btn = document.getElementById('themeToggle');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          var isLight = root.getAttribute('data-theme') === 'light';
+          var next = isLight ? 'dark' : 'light';
+          apply(next);
+          try { localStorage.setItem(KEY, next); } catch (e) { }
+        });
+      }
+    })();
+  </script>
 </body>
 </html>
 "@

@@ -73,13 +73,21 @@ for the full API shape, the `StatusData` double-encoding, and the compliance rul
 | `-SkipCertificateCheck` | Ignore TLS validation (self-signed lab certs). |
 
 ## Serving the dashboard
-
 Put the generated `Dashboard.html` where it can be viewed:
 
 - **On the pull server's IIS site** (already present): write it into the pull
   server's physical path (e.g. `C:\inetpub\PSDSCPullServer\Dashboard.html`) and
   browse `https://pull.contoso.com/Dashboard.html`, **or**
 - **On a file share** the team can open directly.
+
+## Light / dark theme
+
+The dashboard ships with a **light / dark theme toggle** (top-right button). It
+follows the viewer's OS preference (`prefers-color-scheme`) on first load and
+**remembers the chosen theme** in the browser's `localStorage` for subsequent
+visits. Like everything else it is self-contained — a few lines of inline CSS/JS,
+no framework, no CDN — so it works on an offline pull server. The toggle is hidden
+when printing.
 
 ## Scheduling a periodic refresh
 

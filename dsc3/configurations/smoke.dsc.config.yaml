@@ -2,7 +2,7 @@
 #
 # SPSConfigKit — DSC v3 adapter smoke test (benign).
 #
-# Purpose: validate the `dsc.exe -> Microsoft.Adapters/WindowsPowerShell -> PSDSC resource`
+# Purpose: validate the `dsc.exe -> Microsoft.Windows/WindowsPowerShell -> PSDSC resource`
 # pipeline WITHOUT requiring SharePoint to be installed. It reads a single environment
 # variable through the PSDscResources/Environment resource — no changes, no SharePoint.
 #
@@ -28,7 +28,7 @@ metadata:
 
 resources:
   - name: Adapter smoke test
-    type: Microsoft.Adapters/WindowsPowerShell
+    type: Microsoft.Windows/WindowsPowerShell
     properties:
       resources:
         - name: Read PATH

@@ -13,7 +13,7 @@
 #
 # ADAPTER NOTE: SharePointDsc (and SqlServerDsc, ActiveDirectoryDsc, ...) are MOF/class-based
 # PSDSC resources that only load in Windows PowerShell 5.1. They must therefore be driven through
-# the 'Microsoft.Adapters/WindowsPowerShell' adapter (which hosts them in Windows PowerShell), NOT
+# the 'Microsoft.Windows/WindowsPowerShell' adapter (which hosts them in Windows PowerShell), NOT
 # the 'Microsoft.Adapters/PowerShell' adapter (PowerShell 7, class-based PS7 resources only) — the
 # latter reports 'module not found' for SharePointDsc because PS7 cannot see the 5.1 module path.
 #
@@ -58,7 +58,7 @@ resources:
   # Each nested resource uses the familiar <ModuleName>/<ResourceName> type and the same
   # properties the v1/v2 configuration script sets today.
   - name: SharePoint Server SE
-    type: Microsoft.Adapters/WindowsPowerShell
+    type: Microsoft.Windows/WindowsPowerShell
     properties:
       resources:
         - name: Install prerequisites

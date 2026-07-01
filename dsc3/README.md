@@ -29,39 +29,54 @@ adapter**. Two adapters exist, and picking the right one matters:
 
 | Adapter | Hosts resources in | Use for |
 | --- | --- | --- |
-| `Microsoft.Adapters/WindowsPowerShell` | **Windows PowerShell 5.1** | `SharePointDsc`, `SqlServerDsc`, `ActiveDirectoryDsc` and every other MOF/class-based PSDSC resource this kit already pins |
-| `Microsoft.Adapters/PowerShell` | PowerShell 7 | PS7 **class-based** resources only |
+| `Microsoft.Windows/WindowsPowerShell` | **Windows PowerShell 5.1** | `SharePointDsc`, `SqlServerDsc`, `ActiveDirectoryDsc` and every other MOF/class-based PSDSC resource this kit already pins |
+| `Microsoft.DSC/PowerShell` | PowerShell 7 | PS7 **class-based** resources only |
 
-> The older adapter names `Microsoft.DSC/PowerShell` and
-> `Microsoft.Windows/WindowsPowerShell` still work but are deprecated in DSC 3.2+;
-> prefer the `Microsoft.Adapters/*` names above.
+> **Adapter naming (as of DSC 3.2.2):** `dsc.exe` prints a deprecation warning
+> steering you toward `Microsoft.Adapters/WindowsPowerShell` /
+> `Microsoft.Adapters/PowerShell`, **but those renamed adapters are not shipped in
+> 3.2.2** — using them fails with `Resource not found: Microsoft.Adapters/WindowsPowerShell`.
+> Until a build ships them, use the working (deprecated) names above.
 
-> **SharePointDsc requires the `Microsoft.Adapters/WindowsPowerShell` adapter.**
+> **SharePointDsc requires the `Microsoft.Windows/WindowsPowerShell` adapter.**
 > It is a class/MOF-based module that only loads under Windows PowerShell 5.1, so the
 > PowerShell 7 adapter reports `SharePointDsc/SPInstall module not found` (PS7
-> cannot see the 5.1 module path). Reusing the adapter lets the v3 line keep the
-> same resource logic as the v1/v2 line, so the effort concentrates on the
-> **orchestration layer** (the configuration documents) rather than rewriting
-> every resource.
+> cannot see the 5.1 module path).
 
-### Known constraint — SharePointDsc needs SharePoint present to load
+### Known blocker — SharePointDsc + the Windows PowerShell adapter cache refresh
 
-SharePointDsc 5.x is **class-based**. The Windows PowerShell adapter loads and
-instantiates the resource class to enumerate it during its cache refresh, and
-loading the class triggers a **SharePoint snap-in import**. That import only
-succeeds on a host where SharePoint Server is actually installed, so on a bare
-authoring host `dsc config get/test/set` fails during the cache refresh with:
+SharePointDsc 5.x is **class-based**, and the Windows PowerShell adapter runs a
+**global cache refresh** that loads and instantiates *every* installed PSDSC
+resource class to enumerate it — not only the ones referenced in the document.
+Loading a SharePointDsc class triggers a **SharePoint snap-in import**, which only
+succeeds on a host where SharePoint Server is actually installed. On a bare
+authoring host, `dsc config get/test/set` therefore fails during the cache refresh
+with:
 
 ```
 Import-SPPowerShellSnapIn ... is not recognized as the name of a cmdlet ...
+    at Invoke-DscCacheRefresh, win_psDscAdapter.psm1
 ```
 
-This is a genuine difference from the v1/v2 line: **MOF compilation only reads the
-resource schema** (works without SharePoint), whereas the **DSC v3 adapter actually
-loads the resource** (needs SharePoint present). Run the SharePoint document on a
-node that already has the SharePoint binaries installed. To validate the
-`dsc.exe → adapter` pipeline itself on a bare host, use the benign smoke-test
-document below.
+Two consequences, confirmed on a fresh farm node (SharePointDsc installed by
+`Initialize-DscNode`, SharePoint not yet applied):
+
+1. The `sps.dsc.config.yaml` document cannot be planned/read on a host without
+   SharePoint installed — unlike the v1/v2 line, where **MOF compilation only reads
+   the resource schema** and works fine on a bare authoring host.
+2. Because the refresh is **global**, *any* document routed through the Windows
+   PowerShell adapter fails on such a host as soon as SharePointDsc is present —
+   including the benign `smoke.dsc.config.yaml` below.
+
+**Where this leaves the v3 line:** driving SharePointDsc through the DSC v3 Windows
+PowerShell adapter is only viable on a node that already has SharePoint installed,
+which breaks the "author/plan on a clean host" workflow the v1/v2 line supports.
+This looks like an upstream limitation worth reporting to the
+[PowerShell/DSC](https://github.com/PowerShell/DSC) and/or
+[SharePointDsc](https://github.com/dsccommunity/SharePointDsc) projects (the
+adapter should tolerate a resource that fails to load; the resource should not
+import the SharePoint snap-in at class-load time). Tracked as a v3-line open
+question.
 
 Reference: <https://learn.microsoft.com/en-us/powershell/dsc/>
 

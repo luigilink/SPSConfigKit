@@ -1,4 +1,9 @@
-# This is the SPSConfigKit CI Release workflow to create release from tag push
+# This is the SPSConfigKit CI Release workflow to create releases from tag pushes.
+#
+# Two release channels, selected by the tag name:
+#   * v*        -> stable PowerShell DSC v1/v2 line  (packages scripts/, RELEASE-NOTES.md)
+#   * dsc3-v*   -> experimental DSC v3 line          (packages dsc3/,    RELEASE-NOTES-DSC3.md,
+#                                                       published as a GitHub pre-release)
 
 name: SPSConfigKit CI Release
 
@@ -6,7 +11,8 @@ on:
   push:
     # Sequence of patterns matched against refs/tags
     tags:
-      - "v*" # Push events to matching v*, i.e. v1.0, v20.15.10
+      - "v*" # PSDSC v1/v2 line, e.g. v1.1.1, v1.2.0
+      - "dsc3-v*" # DSC v3 experimental line, e.g. dsc3-v0.1.0
 
 jobs:
   build:
@@ -16,11 +22,27 @@ jobs:
       - name: Checkout code
         id: checkout_code
         uses: actions/checkout@v4
-      # Create a ZIP file with project name and tag version
+      # Decide which channel this tag belongs to (folder, release notes, prerelease flag)
+      - name: Determine release channel
+        id: channel
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_name }}" == dsc3-* ]]; then
+            echo "folder=dsc3" >> "$GITHUB_OUTPUT"
+            echo "notes=RELEASE-NOTES-DSC3.md" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+            echo "Channel: DSC v3 (experimental)"
+          else
+            echo "folder=scripts" >> "$GITHUB_OUTPUT"
+            echo "notes=RELEASE-NOTES.md" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+            echo "Channel: PowerShell DSC v1/v2 (stable)"
+          fi
+      # Create a ZIP file with project name and tag version from the channel's folder
       - name: Create ZIP file of scripts
         run: |
           zip_name="SPSConfigKit-${{ github.ref_name }}.zip"
-          zip -r $zip_name scripts/
+          zip -r "$zip_name" "${{ steps.channel.outputs.folder }}/"
         shell: bash
       # Create Release with tag version
       - name: Create GitHub Release
@@ -30,8 +52,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           draft: false
-          prerelease: false
-          body_path: RELEASE-NOTES.md
+          prerelease: ${{ steps.channel.outputs.prerelease }}
+          body_path: ${{ steps.channel.outputs.notes }}
           files: |
             LICENSE
             SPSConfigKit-${{ github.ref_name }}.zip

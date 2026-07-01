@@ -11,6 +11,21 @@ SPSConfigKit is a PowerShell script tool designed to install and configure a Sha
 
 [Download the latest release, Click here!](https://github.com/luigilink/SPSConfigKit/releases/latest)
 
+## Release lines
+
+SPSConfigKit ships in two parallel lines, each on its own release channel. The stable line
+is unaffected by the experimental one.
+
+| Line | DSC engine | Location | Tag scheme | Release type |
+| --- | --- | --- | --- | --- |
+| **Stable** | PowerShell DSC v1/v2 (MOF + LCM) | [`scripts/`](scripts) | `v*` (e.g. `v1.1.1`) | Release |
+| **Experimental** | DSC v3 (`dsc.exe`) | [`dsc3/`](dsc3) | `dsc3-v*` (e.g. `dsc3-v0.1.0`) | Pre-release |
+
+The DSC v3 line is a ground-up rewrite (YAML/JSON configuration documents, no MOF) that reuses
+the existing PowerShell DSC resources through the `Microsoft.DSC/PowerShell` adapter. See
+[`dsc3/README.md`](dsc3/README.md) for details. Unless you are specifically evaluating DSC v3,
+use the stable line under [`scripts/`](scripts).
+
 ## Requirements
 
 ### Windows Management Framework 5.0

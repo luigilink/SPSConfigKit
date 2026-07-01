@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://aka.ms/dsc/schemas/v3/bundled/config/document.json
+#
+# SPSConfigKit — DSC v3 sample configuration document (STARTER / experimental).
+#
+# This is a minimal, illustrative SharePoint Server Subscription Edition document that
+# demonstrates the intended pattern for the v3 line: reuse the existing class/MOF-based
+# PowerShell DSC resources (SharePointDsc, SqlServerDsc, ...) through the built-in
+# Microsoft.DSC/PowerShell adapter, instead of rewriting every resource.
+#
+# It is NOT feature-complete — it exists so the folder, schema and release channel can be
+# exercised end to end while the v3 line is built out. Values mirror the contoso.com sample
+# used by the v1/v2 line (see ../scripts/sps/CfgAppSps.psd1).
+#
+# Validate : dsc config get  --file dsc3/configurations/sps.dsc.config.yaml
+# What-if  : dsc config test --file dsc3/configurations/sps.dsc.config.yaml
+# Apply    : dsc config set  --file dsc3/configurations/sps.dsc.config.yaml
+
+$schema: https://aka.ms/dsc/schemas/v3/bundled/config/document.json
+
+metadata:
+  project: SPSConfigKit
+  line: dsc-v3
+  status: experimental
+  description: >-
+    Starter SharePoint Server SE farm document driving existing SharePointDsc
+    resources through the PowerShell adapter.
+
+# Parameters let the same document target different farms without editing the resources.
+parameters:
+  binaryDir:
+    type: string
+    defaultValue: 'F:\SoftwarePackages\SPS\BIN'
+    metadata:
+      description: Path to the SharePoint Server SE binaries (prerequisiteinstaller.exe / setup.exe).
+  productKey:
+    type: string
+    defaultValue: 'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'
+    metadata:
+      description: SharePoint Server SE product key. Replace before applying — do NOT commit a real key.
+
+resources:
+  # The PowerShell adapter hosts one or more class/MOF-based PSDSC resources. Each nested
+  # resource uses the familiar <ModuleName>/<ResourceName> type and the same properties the
+  # v1/v2 configuration script sets today.
+  - name: SharePoint Server SE
+    type: Microsoft.DSC/PowerShell
+    properties:
+      resources:
+        - name: Install prerequisites
+          type: SharePointDsc/SPInstallPrereqs
+          properties:
+            IsSingleInstance: 'Yes'
+            InstallerPath: "[concat(parameters('binaryDir'), '\\prerequisiteinstaller.exe')]"
+            OnlineMode: true
+            Ensure: Present
+
+        - name: Install binaries
+          type: SharePointDsc/SPInstall
+          properties:
+            IsSingleInstance: 'Yes'
+            BinaryDir: "[parameters('binaryDir')]"
+            ProductKey: "[parameters('productKey')]"
+            Ensure: Present
+          dependsOn:
+            - "[resourceId('SharePointDsc/SPInstallPrereqs', 'Install prerequisites')]"

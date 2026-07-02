@@ -127,11 +127,13 @@ and poll later with `Get-DscConfigurationStatus`.
 ### Option B &mdash; pull from a DSC pull server
 
 1. Stand up the pull server with `scripts/pull/CfgAppPull.ps1`, then run
-   `scripts/pull/Set-SPSPullServerPermission.ps1 -AppPoolIdentity '<pull AppPool account>'`
-   **once, elevated, on the pull server**. That post-configuration step grants
-   the pull-server AppPool identity write access to the DSC service folder so the
-   ESENT repository (`Devices.edb`) can be created &mdash; without it, no reports
-   are stored. See `scripts/pull/README.md` for the full pull workflow.
+   `scripts/pull/Set-SPSPullServerPermission.ps1`
+   **once, elevated, on the pull server** (it auto-resolves the pull AppPool
+   account from `Secrets.psd1`; override with `-AppPoolIdentity` if needed). That
+   post-configuration step grants the pull-server AppPool identity write access to
+   the DSC service folder so the ESENT repository (`Devices.edb`) can be created
+   &mdash; without it, no reports are stored. See `scripts/pull/README.md` for the
+   full pull workflow.
 2. Publish the MOFs (and checksums) to the pull-server's
    `Configuration` folder. The sample pull server in `scripts/pull/`
    exposes `C:\Program Files\WindowsPowerShell\DscService\Configuration`.

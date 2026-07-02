@@ -21,8 +21,11 @@
   - New one-shot, elevated post-configuration script that grants the pull-server
     AppPool identity Modify on the DSC service folder (`takeown /a` then
     `icacls /grant …:(OI)(CI)M`), so the ESENT repository (`Devices.edb`) can be
-    created. Idempotent, `-WhatIf`-aware, parameterised by `-AppPoolIdentity` /
-    `-DscServicePath` / `-TakeOwnership`, with a final verification.
+    created. The AppPool identity is resolved from `Secrets.psd1` (`IISPULLAPP`)
+    by default so it always matches the account `CfgAppPull.ps1` assigns, with
+    `-AppPoolIdentity` as an explicit override. Idempotent, `-WhatIf`-aware, and
+    parameterised by `-SecretsFile` / `-AppPoolSecretName` / `-DscServicePath` /
+    `-TakeOwnership`, with a final verification.
 - `scripts/pull/README.md`
   - Documents the end-to-end pull workflow (stand up server → grant permission →
     publish MOFs → register LCMs with `-UpdateNow` → watch the dashboard) and why

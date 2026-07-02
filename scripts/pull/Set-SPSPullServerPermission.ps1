@@ -38,9 +38,19 @@
   pull server. It is idempotent: re-running it re-asserts the grant and exits 0.
 
   .PARAMETER AppPoolIdentity
-  The IIS application-pool identity that runs the pull server (the PSWS app pool),
-  e.g. 'CONTOSO\svcpulliisapp'. This must match the IISPULLAPP account from
-  Secrets.psd1 that CfgAppPull.ps1 assigned to the pull-server AppPool.
+  Optional: when omitted it is resolved from Secrets.psd1 (the `AppPoolSecretName`
+  entry, default `IISPULLAPP`) so it always matches the account CfgAppPull.ps1
+  assigned to the pull-server AppPool. Pass it explicitly only to override.
+
+  .PARAMETER SecretsFile
+  Path to Secrets.psd1 used to resolve the AppPool identity when -AppPoolIdentity
+  is not supplied. Defaults to ..\Secrets.psd1 relative to this script (the same
+  location CfgAppPull.ps1 uses).
+
+  .PARAMETER AppPoolSecretName
+  Name of the Secrets.psd1 serviceAccounts entry that holds the pull-server
+  AppPool identity. Defaults to 'IISPULLAPP' (the account CfgAppPull.ps1 assigns
+  via $IISPULLAPP).
 
   .PARAMETER DscServicePath
   The DSC service folder to grant on. Defaults to
@@ -54,11 +64,14 @@
   owned by Administrators / SYSTEM and you only want the grant.
 
   .EXAMPLE
+  # Resolve the AppPool identity from Secrets.psd1 (recommended — stays in sync with CfgAppPull.ps1)
+  .\Set-SPSPullServerPermission.ps1
+
+  .EXAMPLE
   .\Set-SPSPullServerPermission.ps1 -AppPoolIdentity 'CONTOSO\svcpulliisapp'
 
   .EXAMPLE
-  .\Set-SPSPullServerPermission.ps1 -AppPoolIdentity 'CONTOSO\svcpulliisapp' `
-      -DscServicePath 'D:\DscService'
+  .\Set-SPSPullServerPermission.ps1 -DscServicePath 'D:\DscService'
 
   .NOTES
   Project : SPSConfigKit
@@ -68,10 +81,20 @@
 
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-  [Parameter(Mandatory = $true)]
+  [Parameter()]
   [ValidateNotNullOrEmpty()]
   [System.String]
   $AppPoolIdentity,
+
+  [Parameter()]
+  [ValidateNotNullOrEmpty()]
+  [System.String]
+  $SecretsFile,
+
+  [Parameter()]
+  [ValidateNotNullOrEmpty()]
+  [System.String]
+  $AppPoolSecretName = 'IISPULLAPP',
 
   [Parameter()]
   [ValidateNotNullOrEmpty()]
@@ -84,6 +107,28 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Resolve the AppPool identity from Secrets.psd1 when it wasn't passed explicitly,
+# so this script and CfgAppPull.ps1 always target the same account (CfgAppPull.ps1
+# assigns the pull-server AppPool to $IISPULLAPP.UserName from the same file).
+if ([string]::IsNullOrWhiteSpace($AppPoolIdentity)) {
+  $scriptBasePath = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+  if ([string]::IsNullOrWhiteSpace($SecretsFile)) {
+    $SecretsFile = Join-Path -Path (Split-Path -Path $scriptBasePath -Parent) -ChildPath 'Secrets.psd1'
+  }
+  if (-not (Test-Path -LiteralPath $SecretsFile)) {
+    throw ("AppPoolIdentity not supplied and Secrets.psd1 not found at '{0}'. Pass -AppPoolIdentity or -SecretsFile." -f $SecretsFile)
+  }
+  $secretsData = Import-PowerShellDataFile -Path $SecretsFile
+  $account = @($secretsData.serviceAccounts | Where-Object { $_.Name -eq $AppPoolSecretName }) | Select-Object -First 1
+  if (-not $account) {
+    throw ("No serviceAccounts entry named '{0}' in '{1}'. Pass -AppPoolIdentity explicitly or fix -AppPoolSecretName." -f $AppPoolSecretName, $SecretsFile)
+  }
+  $AppPoolIdentity = $account.UserName
+  if ([string]::IsNullOrWhiteSpace($AppPoolIdentity)) {
+    throw ("The '{0}' entry in '{1}' has no UserName." -f $AppPoolSecretName, $SecretsFile)
+  }
+}
 
 function Test-GrantPresent {
   param([System.String] $Path, [System.String] $Identity)

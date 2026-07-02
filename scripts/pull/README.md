@@ -28,6 +28,10 @@ This folder configures the two halves of a classic Windows DSC pull deployment:
    on the pull server:
 
    ```powershell
+   # Resolves the AppPool identity from Secrets.psd1 (IISPULLAPP) automatically
+   .\Set-SPSPullServerPermission.ps1
+
+   # …or pass it explicitly to override
    .\Set-SPSPullServerPermission.ps1 -AppPoolIdentity 'CONTOSO\svcpulliisapp'
    ```
 
@@ -69,7 +73,9 @@ This folder configures the two halves of a classic Windows DSC pull deployment:
 
 | Parameter | Purpose |
 | --- | --- |
-| `-AppPoolIdentity` | **Required.** The IIS AppPool identity that runs the pull server (the `IISPULLAPP` account from `Secrets.psd1`), e.g. `CONTOSO\svcpulliisapp`. |
+| `-AppPoolIdentity` | Optional override. When omitted it is resolved from `Secrets.psd1` (see `-AppPoolSecretName`), so it always matches the account `CfgAppPull.ps1` assigned to the pull-server AppPool. |
+| `-SecretsFile` | `Secrets.psd1` used to resolve the AppPool identity. Default `..\Secrets.psd1` (same location `CfgAppPull.ps1` uses). |
+| `-AppPoolSecretName` | Name of the `serviceAccounts` entry holding the AppPool identity. Default `IISPULLAPP`. |
 | `-DscServicePath` | DSC service folder to grant on. Default `"$env:PROGRAMFILES\WindowsPowerShell\DscService"`. |
 | `-TakeOwnership` | Take ownership before granting (default `$true`). Set to `$false` if the folder is already owned by Administrators / SYSTEM. |
 

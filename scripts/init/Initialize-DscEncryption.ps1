@@ -29,7 +29,7 @@
 
 .PARAMETER SourcePath
     UNC or local folder that receives the exported certificate files AND that
-    each node will read at compile time. Default: \\PDC1\Softwarepackages
+    each node will read at compile time. Default: \\PULL\Softwarepackages
 
 .PARAMETER CertSubject
     Subject (CN=...) of the self-signed certificate. Default: 'DSC Encryption'.
@@ -61,7 +61,7 @@
 .EXAMPLE
     .\Initialize-DscEncryption.ps1
 
-    Reuses or creates the cert, exports only the .cer to \\PDC1\Softwarepackages,
+    Reuses or creates the cert, exports only the .cer to \\PULL\Softwarepackages,
     and patches every Cfg*.psd1 found in the repo.
 
 .EXAMPLE
@@ -75,7 +75,7 @@
     Runs on Windows only (uses the Cert: drive and New-SelfSignedCertificate).
 
     On EACH target node, after the .pfx is available:
-        Import-PfxCertificate -FilePath '\\PDC1\Softwarepackages\DscEncryption.pfx' `
+        Import-PfxCertificate -FilePath '\\PULL\Softwarepackages\DscEncryption.pfx' `
             -CertStoreLocation Cert:\LocalMachine\My `
             -Password (Read-Host 'PFX password' -AsSecureString)
 
@@ -84,7 +84,7 @@
 
 [CmdletBinding()]
 param(
-    [string]       $SourcePath         = '\\PDC1\Softwarepackages',
+    [string]       $SourcePath         = '\\PULL\Softwarepackages',
     [string]       $CertSubject        = 'DSC Encryption',
     [string]       $CertFileName       = 'DscEncryption.cer',
     [SecureString] $PfxPassword,

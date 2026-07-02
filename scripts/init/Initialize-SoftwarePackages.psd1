@@ -2,7 +2,7 @@
 @{
   # Root folder of the local SoftwarePackages repository. Every entry below
   # uses a Path RELATIVE to this root. The companion SMB share (typically
-  # \\PDC1\SoftwarePackages) is expected to publish exactly this folder.
+  # \\PULL\SoftwarePackages) is expected to publish exactly this folder.
   Repository = 'F:\SoftwarePackages'
 
   SoftwarePackages = @(

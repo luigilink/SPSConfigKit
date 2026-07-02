@@ -19,6 +19,10 @@
     }
   )
   NonNodeData = @{
+    # Single share root — host the SoftwarePackages share on a MEMBER server
+    # (e.g. the pull server), NOT on a domain controller. Certificate paths are
+    # derived from this by CfgAppPdc.ps1 (SourcePath + CerFileName / PfxFileName).
+    SourcePath  = '\\PULL\Softwarepackages'
     Drives      = @{
       Data = 'F:'
     }
@@ -34,32 +38,32 @@
           FriendlyName = 'DSCPull'
           Subject      = 'pull.contoso.com'
           SubjectAlt   = 'dns=pull.contoso.com'
-          CertPath     = '\\PDC1\Softwarepackages\DscPull.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\DscPull.pfx'
+          CerFileName  = 'DscPull.cer'
+          PfxFileName  = 'DscPull.pfx'
         }
         @{
           Name         = 'SharePointCert'
           FriendlyName = 'SharePoint'
           Subject      = 'sharepoint.contoso.com'
           SubjectAlt   = 'dns=sharepoint.contoso.com'
-          CertPath     = '\\PDC1\Softwarepackages\SharePoint.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\SharePoint.pfx'
+          CerFileName  = 'SharePoint.cer'
+          PfxFileName  = 'SharePoint.pfx'
         }
         @{
           Name         = 'OfficeOnlineCert'
           FriendlyName = 'OOSCertSSL'
           Subject      = 'oosweb.contoso.com'
           SubjectAlt   = 'dns=oosweb.contoso.com'
-          CertPath     = '\\PDC1\Softwarepackages\OfficeOnline.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\OfficeOnline.pfx'
+          CerFileName  = 'OfficeOnline.cer'
+          PfxFileName  = 'OfficeOnline.pfx'
         }
         @{
           Name         = 'SQLServerCert'
           FriendlyName = 'SQLCertSSL'
           Subject      = 'sql1.contoso.com'
           SubjectAlt   = 'dns=sql1&dns=sql1.contoso.com'
-          CertPath     = '\\PDC1\Softwarepackages\SQLServer.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\SQLServer.pfx'
+          CerFileName  = 'SQLServer.cer'
+          PfxFileName  = 'SQLServer.pfx'
         }
       )
     }

@@ -154,16 +154,23 @@ Flat container of farm-wide settings:
 
 ```powershell
 NonNodeData = @{
-    SourcePath = '\\PDC1\Softwarepackages'    # binaries + .cer/.pfx share
+    # The share host is defined ONCE here. Host it on a MEMBER server (e.g. the
+    # pull server), never on a domain controller (a node already holds a machine
+    # session to the DC, and Windows refuses a second identity to the same server,
+    # so a share on the DC fails at apply with "Access is denied").
+    SourcePath = '\\PULL\Softwarepackages'    # binaries + .cer/.pfx share
     DomainName = 'contoso.com'
     Drives     = @{ Data = 'F:'; Logs = 'G:' }
 
     ADC        = @{
+        # Each entry carries only the .cer / .pfx FILE NAME; the full path is
+        # derived by the Cfg*.ps1 script as SourcePath + CerFileName / PfxFileName.
+        # (An explicit CertPath / PfxPath is still honoured for backward compat.)
         certificates = @(
-            @{ Name = 'SharePointCert'    ; FriendlyName = 'SharePoint'  ; CertPath = '\\PDC1\…\SharePoint.cer'  ; PfxPath = '\\PDC1\…\SharePoint.pfx'  }
-            @{ Name = 'OfficeOnlineCert'  ; FriendlyName = 'OOSCertSSL'  ; CertPath = '\\PDC1\…\OfficeOnline.cer'; PfxPath = '\\PDC1\…\OfficeOnline.pfx' }
-            @{ Name = 'SQLServerCert'     ; FriendlyName = 'SQLCertSSL'  ; CertPath = '\\PDC1\…\SQLServer.cer'   ; PfxPath = '\\PDC1\…\SQLServer.pfx'    }
-            @{ Name = 'DscPullCert'       ; FriendlyName = 'DSCPull'     ; CertPath = '\\PDC1\…\DscPull.cer'     ; PfxPath = '\\PDC1\…\DscPull.pfx'      }
+            @{ Name = 'SharePointCert'    ; FriendlyName = 'SharePoint'  ; CerFileName = 'SharePoint.cer'  ; PfxFileName = 'SharePoint.pfx'  }
+            @{ Name = 'OfficeOnlineCert'  ; FriendlyName = 'OOSCertSSL'  ; CerFileName = 'OfficeOnline.cer'; PfxFileName = 'OfficeOnline.pfx' }
+            @{ Name = 'SQLServerCert'     ; FriendlyName = 'SQLCertSSL'  ; CerFileName = 'SQLServer.cer'   ; PfxFileName = 'SQLServer.pfx'    }
+            @{ Name = 'DscPullCert'       ; FriendlyName = 'DSCPull'     ; CerFileName = 'DscPull.cer'     ; PfxFileName = 'DscPull.pfx'      }
         )
     }
 
@@ -280,7 +287,7 @@ your organisation's production AD, pull-server, and SQL provisioning**.
 ## `scripts/init/Initialize-SoftwarePackages.psd1`
 
 The manifest read by `Initialize-SoftwarePackages.ps1`. It describes the
-local file-share repository that backs `\\PDC1\SoftwarePackages` (or
+local file-share repository that backs `\\PULL\SoftwarePackages` (or
 whichever SMB share every node downloads binaries from), and the list of
 packages the script should fetch into it.
 

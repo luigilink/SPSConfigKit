@@ -273,9 +273,12 @@ Describe 'ADC certificates' -Skip:(-not $hasAdc) {
     ($fn | Group-Object | Where-Object Count -GT 1).Count | Should -Be 0
   }
 
-  It '<_.Name> has CertPath and PfxPath populated' -ForEach $certs {
-    $_.CertPath | Should -Not -BeNullOrEmpty
-    $_.PfxPath | Should -Not -BeNullOrEmpty
+  It '<_.Name> resolves a certificate + pfx path (CertPath/PfxPath or CerFileName/PfxFileName)' -ForEach $certs {
+    # DRY: an entry may carry an explicit CertPath/PfxPath, or just the file names
+    # (CerFileName/PfxFileName), from which Cfg*.ps1 derives the path using the
+    # shared NonNodeData.SourcePath. Either form is valid, but one must be present.
+    ($_.CertPath -or $_.CerFileName) | Should -BeTrue -Because 'each certificate needs an explicit CertPath or a CerFileName to derive from SourcePath'
+    ($_.PfxPath -or $_.PfxFileName) | Should -BeTrue -Because 'each certificate needs an explicit PfxPath or a PfxFileName to derive from SourcePath'
   }
 
   It '<_.Name> has a matching Secrets.psd1 entry (drives the PFX password)' -ForEach $certs {
@@ -283,11 +286,15 @@ Describe 'ADC certificates' -Skip:(-not $hasAdc) {
   }
 
   Context 'Filesystem reachability' -Skip:($SkipFilesystem -or -not $hasAdc) {
-    It '<_.Name> CertPath exists (<_.CertPath>)' -ForEach $certs {
-      Test-Path -LiteralPath $_.CertPath | Should -BeTrue
+    It '<_.Name> certificate file exists' -ForEach $certs {
+      $root = ([string]$script:ConfigData.NonNodeData.SourcePath).TrimEnd('\')
+      $cerPath = if ($_.CertPath) { $_.CertPath } else { '{0}\{1}' -f $root, $_.CerFileName }
+      Test-Path -LiteralPath $cerPath | Should -BeTrue
     }
-    It '<_.Name> PfxPath exists (<_.PfxPath>)' -ForEach $certs {
-      Test-Path -LiteralPath $_.PfxPath | Should -BeTrue
+    It '<_.Name> pfx file exists' -ForEach $certs {
+      $root = ([string]$script:ConfigData.NonNodeData.SourcePath).TrimEnd('\')
+      $pfxPath = if ($_.PfxPath) { $_.PfxPath } else { '{0}\{1}' -f $root, $_.PfxFileName }
+      Test-Path -LiteralPath $pfxPath | Should -BeTrue
     }
   }
 }

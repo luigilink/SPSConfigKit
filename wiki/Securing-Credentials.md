@@ -63,7 +63,7 @@ $pfxPwd = Read-Host 'PFX password' -AsSecureString
 
 - creates (or reuses) a `CN=DSC Encryption` certificate valid for 10 years;
 - exports the public `DscEncryption.cer` **and** the password-protected
-  `DscEncryption.pfx` to the share (default `\\PDC1\Softwarepackages`);
+  `DscEncryption.pfx` to the share (default `\\PULL\Softwarepackages`);
 - **patches every `Cfg*.psd1`** in the repo: the wildcard `'*'` AllNodes block gets
   `PSDscAllowPlainTextPassword = $false`, `CertificateFile = '<share>\DscEncryption.cer'`,
   and `Thumbprint = '<thumbprint>'`. Because these live on the wildcard block,
@@ -81,7 +81,7 @@ $pfxPwd = Read-Host 'PFX password' -AsSecureString
 bootstrap. To do it (or re-do it) by hand on a node:
 
 ```powershell
-Import-PfxCertificate -FilePath '\\PDC1\Softwarepackages\DscEncryption.pfx' `
+Import-PfxCertificate -FilePath '\\PULL\Softwarepackages\DscEncryption.pfx' `
     -CertStoreLocation Cert:\LocalMachine\My `
     -Password (Read-Host 'PFX password' -AsSecureString)
 ```

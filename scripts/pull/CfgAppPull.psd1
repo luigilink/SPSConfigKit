@@ -14,6 +14,10 @@
     }
   )
   NonNodeData = @{
+    # Single share root — host the SoftwarePackages share on a MEMBER server
+    # (e.g. this pull server), NOT on a domain controller. The certificate path is
+    # derived from this by CfgAppPull.ps1 (SourcePath + CerFileName / PfxFileName).
+    SourcePath = '\\PULL\Softwarepackages'
     Drives = @{
       Logs = 'G:'
     }
@@ -22,8 +26,8 @@
         @{
           Name         = 'DscPullCert'
           FriendlyName = 'DSCPull'
-          CertPath     = '\\PDC1\Softwarepackages\DscPull.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\DscPull.pfx'
+          CerFileName  = 'DscPull.cer'
+          PfxFileName  = 'DscPull.pfx'
         }
       )
     }

@@ -37,35 +37,48 @@ Other prerequisites:
   OData endpoint without extra firewall rules.
 - PowerShell 5.1.
 
-## Why the OData API (not `Devices.edb` directly)
+## Why a node manifest + the keyed OData API (not `GET /Nodes`, not `Devices.edb`)
 
-The ESENT database `Devices.edb` is **exclusively locked by IIS** while the pull
-server is running — you cannot open it from another process without stopping the
-app pool (downtime). The OData reporting endpoint
-(`PSDSCPullServer.svc/Nodes(AgentId='…')/Reports`) exposes the same data over HTTP
-with **no lock and no downtime**, so the dashboard uses it. See the research notes
-for the full API shape, the `StatusData` double-encoding, and the compliance rules.
+The classic `xDscWebService` pull server has two hard constraints:
+
+- **OData cannot enumerate nodes.** `GET /PSDSCPullServer.svc/Nodes` (and every
+  collection form: `/Nodes()`, `?$top=…`, `?$filter=…`) returns **HTTP 400**
+  *"resourceKeys is unexpected for MSFT.DSCNode"*. The provider only answers
+  **keyed** queries — `Nodes(AgentId='…')` and `Nodes(AgentId='…')/Reports`.
+- **`Devices.edb` is exclusively locked by IIS** while the pull server runs, so it
+  can't be read from another process without stopping the app pool (downtime).
+
+So the dashboard needs the node **AgentIds** from a third source. Registration is
+the one moment each node knows its own AgentId, so `CfgLcmPull.ps1` publishes a
+per-node `<NodeName>.json` (NodeName + AgentId + ConfigurationNames) into a shared
+manifest folder (`-NodeManifestPath`). The dashboard reads that folder to discover
+the nodes, then queries the supported keyed endpoint
+`Nodes(AgentId='…')/Reports` for each — no lock, no downtime.
 
 ## Usage
 
 ```powershell
 # Against the live pull server (run on the pull server, localhost)
 .\New-SPSDscDashboard.ps1 `
-    -PullServerUrl 'https://localhost/PSDSCPullServer.svc' `
-    -OutputPath    'C:\inetpub\PSDSCPullServer\Dashboard.html'
-
-# Self-signed lab certificate on the pull server
-.\New-SPSDscDashboard.ps1 -PullServerUrl 'https://localhost/PSDSCPullServer.svc' -SkipCertificateCheck
+    -PullServerUrl     'https://localhost/PSDSCPullServer.svc' `
+    -NodeManifestPath  '\\pull\DscNodeManifest' `
+    -SkipCertificateCheck `
+    -OutputPath        'C:\inetpub\PSDSCPullServer\Dashboard.html'
 
 # Offline render from mock data (no pull server needed — for testing / demos)
 .\New-SPSDscDashboard.ps1 -MockDataPath .\samples\mock-data.json -OutputPath .\Dashboard.html
 ```
+
+> The manifest folder is populated by the nodes when they register:
+> `.\CfgLcmPull.ps1 -DSCRegistrationKey … -DSCPullServerUrl … -NodeManifestPath '\\pull\DscNodeManifest' -UpdateNow`
+> (or via the `NodeManifestPath` key in the `-DomainDefaultsPath` file).
 
 ### Parameters
 
 | Parameter | Purpose |
 | --- | --- |
 | `-PullServerUrl` | Base URL of the OData service. Default `https://localhost/PSDSCPullServer.svc`. |
+| `-NodeManifestPath` | Shared folder of `<NodeName>.json` entries published by `CfgLcmPull.ps1`. Required for live rendering (how the dashboard discovers nodes). |
 | `-OutputPath` | HTML file to write. Default `Dashboard.html` next to the script. |
 | `-Title` | Dashboard heading. |
 | `-MaxReportsPerNode` | Cap on reports fetched per node before picking the latest (guards the unbounded ESENT `StatusReport` table). Default 50. |

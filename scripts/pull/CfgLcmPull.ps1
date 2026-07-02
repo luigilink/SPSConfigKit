@@ -51,6 +51,16 @@
     CfgLcmPull.DomainDefaults.sample.psd1 ships as a template. Shape:
         @{ 'contoso.com' = @{ RegistrationKey = '<guid>'; PullServerUrl = 'https://pull.contoso.com/PSDSCPullServer.svc' } }
 
+    .PARAMETER NodeManifestPath
+    Optional folder (typically a UNC share the pull server and the dashboard can
+    both read) where this script publishes a per-node <NodeName>.json entry after
+    registering, containing NodeName, AgentId and ConfigurationNames. The
+    compliance dashboard (New-SPSDscDashboard.ps1) reads these entries to discover
+    which nodes exist, because the pull server's OData API cannot enumerate nodes
+    (GET /Nodes returns HTTP 400) — it only answers keyed Nodes(AgentId='...')
+    queries. May also be supplied per-domain via -DomainDefaultsPath
+    (NodeManifestPath key). Re-registration overwrites the node's own file.
+
     .PARAMETER UpdateNow
     After registering the LCM in Pull mode, trigger an immediate
     Update-DscConfiguration -Wait so the node pulls, applies and reports right
@@ -119,6 +129,11 @@ param(
     [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
     [System.String]
     $DomainDefaultsPath,
+
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [System.String]
+    $NodeManifestPath,
 
     [Parameter()]
     [switch]
@@ -199,6 +214,7 @@ if (-not $DisableLCM) {
         }
         if ([string]::IsNullOrWhiteSpace($DSCRegistrationKey)) { $DSCRegistrationKey = $match.RegistrationKey }
         if ([string]::IsNullOrWhiteSpace($DSCPullServerUrl)) { $DSCPullServerUrl = $match.PullServerUrl }
+        if ([string]::IsNullOrWhiteSpace($NodeManifestPath) -and $match.NodeManifestPath) { $NodeManifestPath = $match.NodeManifestPath }
     }
 
     if ([string]::IsNullOrWhiteSpace($DSCRegistrationKey) -or [string]::IsNullOrWhiteSpace($DSCPullServerUrl)) {
@@ -426,6 +442,40 @@ try {
 catch {
     Write-Error -Message ("LCM verification failed: {0}" -f $_.Exception.Message) -ErrorAction Continue
     throw
+}
+
+# Step 6b - Publish this node's AgentId to the shared node manifest so the
+# compliance dashboard can enumerate nodes. The pull server's OData API cannot
+# list nodes (GET /Nodes returns HTTP 400 "resourceKeys is unexpected"); it only
+# answers keyed queries (Nodes(AgentId='...')/Reports). Registration is the one
+# moment we hold this node's AgentId, so we drop a per-node <NodeName>.json file
+# in the manifest folder. Re-registration overwrites the same file, so a node
+# that gets a new AgentId never leaves a stale entry behind.
+if (-not $DisableLCM -and -not [string]::IsNullOrWhiteSpace($NodeManifestPath)) {
+    try {
+        $agentId = (Get-DscLocalConfigurationManager).AgentId
+        if ([string]::IsNullOrWhiteSpace($agentId)) {
+            Write-Warning 'LCM did not report an AgentId yet; skipping node manifest publication.'
+        }
+        else {
+            if (-not (Test-Path -LiteralPath $NodeManifestPath)) {
+                New-Item -Path $NodeManifestPath -ItemType Directory -Force | Out-Null
+            }
+            $manifestEntry = [ordered]@{
+                NodeName           = $dscNodeTarget
+                AgentId            = $agentId
+                ConfigurationNames = @($ConfigurationNames)
+                PullServerUrl      = $DSCPullServerUrl
+                RegisteredOn       = (Get-Date).ToString('o')
+            }
+            $manifestFile = Join-Path -Path $NodeManifestPath -ChildPath ("{0}.json" -f $dscNodeTarget)
+            $manifestEntry | ConvertTo-Json -Depth 4 | Set-Content -Path $manifestFile -Encoding UTF8 -Force
+            Write-Output ("Published node manifest entry for AgentId {0} to '{1}'." -f $agentId, $manifestFile)
+        }
+    }
+    catch {
+        Write-Warning ("Unable to publish the node manifest entry to '{0}': {1}" -f $NodeManifestPath, $_.Exception.Message)
+    }
 }
 
 # Step 7 - Clean up the compiled meta-MOF (non-critical, scoped to MOF artefacts)

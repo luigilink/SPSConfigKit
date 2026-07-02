@@ -28,9 +28,14 @@
   no CDN — works on an offline pull server). Intended to run on the pull server
   itself (localhost) as a scheduled task.
 
-  Data source rationale: the OData API is used instead of reading Devices.edb
-  directly because the ESENT database is exclusively locked by IIS while the pull
-  server is running. See scripts/dashboard/README.md.
+  Data source rationale: the classic xDscWebService pull server's OData API
+  cannot enumerate nodes — GET /Nodes returns HTTP 400 ("resourceKeys is
+  unexpected for MSFT.DSCNode") because the provider exposes only keyed access,
+  and Devices.edb is exclusively locked by IIS so it can't be read directly
+  either. The node list therefore comes from a manifest folder each node
+  populates at registration time (CfgLcmPull.ps1 -NodeManifestPath); this script
+  then queries the supported keyed endpoint Nodes(AgentId='...')/Reports for
+  each. See scripts/dashboard/README.md.
 
   .PARAMETER PullServerUrl
   Base URL of the pull server OData service, e.g.
@@ -53,12 +58,18 @@
   made — the dashboard is rendered from the mock file. Lets the renderer be tested
   without a live pull server.
 
+  .PARAMETER NodeManifestPath
+  Folder (typically the shared folder passed to CfgLcmPull.ps1 -NodeManifestPath)
+  holding one <NodeName>.json per registered node with its AgentId. Required for
+  live rendering (unless -MockDataPath is used); it is how the dashboard discovers
+  which nodes exist, since the pull server OData API cannot list them.
+
   .PARAMETER SkipCertificateCheck
   Ignore TLS certificate validation when calling the pull server (self-signed lab
   certs). PowerShell 5.1 compatible.
 
   .EXAMPLE
-  .\New-SPSDscDashboard.ps1 -PullServerUrl 'https://localhost/PSDSCPullServer.svc' -OutputPath 'C:\inetpub\PSDSCPullServer\Dashboard.html'
+  .\New-SPSDscDashboard.ps1 -PullServerUrl 'https://localhost/PSDSCPullServer.svc' -NodeManifestPath '\\pull\DscNodeManifest' -SkipCertificateCheck -OutputPath 'C:\inetpub\PSDSCPullServer\Dashboard.html'
 
   .EXAMPLE
   .\New-SPSDscDashboard.ps1 -MockDataPath .\samples\mock-data.json -OutputPath .\Dashboard.html
@@ -90,6 +101,10 @@ param(
   [Parameter()]
   [System.String]
   $MockDataPath,
+
+  [Parameter()]
+  [System.String]
+  $NodeManifestPath,
 
   [Parameter()]
   [switch]
@@ -168,7 +183,15 @@ public static class SpsCertBypass {
 function Get-DscNodeData {
   <#
     Returns the raw { Nodes = @(); Reports = @{ AgentId = @(reports) } } shape,
-    from either the live OData API or the mock file. Both feed the same normaliser.
+    from either the node manifest + live OData API, or the mock file. Both feed
+    the same normaliser.
+
+    The classic xDscWebService pull server cannot enumerate nodes over OData:
+    GET /Nodes returns HTTP 400 ("resourceKeys is unexpected for MSFT.DSCNode")
+    because the provider only exposes keyed access. So the node list comes from
+    the manifest folder each node populates at registration time
+    (CfgLcmPull.ps1 -NodeManifestPath), and this function then queries the
+    supported keyed endpoint Nodes(AgentId='...')/Reports for each one.
   #>
   param()
   if ($MockDataPath) {
@@ -177,19 +200,41 @@ function Get-DscNodeData {
     return $mock
   }
 
-  Write-Host "Querying pull server: $PullServerUrl"
-  $nodesResp = Invoke-DscPullApi -Uri "$PullServerUrl/Nodes"
-  $nodes = @($nodesResp.value)
+  if (-not $NodeManifestPath) {
+    throw "Provide -NodeManifestPath (the shared folder where CfgLcmPull.ps1 publishes each node's AgentId) or -MockDataPath. The pull server's OData API cannot enumerate nodes on its own."
+  }
+  if (-not (Test-Path -LiteralPath $NodeManifestPath)) {
+    throw "NodeManifestPath not found: $NodeManifestPath"
+  }
+
+  $baseUrl = $PullServerUrl.TrimEnd('/')
+  Write-Host "Reading node manifest: $NodeManifestPath"
+  $manifestFiles = @(Get-ChildItem -LiteralPath $NodeManifestPath -Filter '*.json' -File -ErrorAction SilentlyContinue)
+  if ($manifestFiles.Count -eq 0) {
+    Write-Warning "No node manifest entries (*.json) found in '$NodeManifestPath'. Have the nodes run CfgLcmPull.ps1 -NodeManifestPath yet?"
+  }
+
+  $nodes = @()
   $reports = @{}
-  foreach ($node in $nodes) {
-    $agentId = $node.AgentId
-    if (-not $agentId) { continue }
+  foreach ($file in $manifestFiles) {
     try {
-      $rResp = Invoke-DscPullApi -Uri "$PullServerUrl/Nodes(AgentId='$agentId')/Reports"
+      $entry = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json
+    }
+    catch {
+      Write-Warning "Skipping unreadable manifest '$($file.Name)': $($_.Exception.Message)"
+      continue
+    }
+    $agentId = $entry.AgentId
+    if (-not $agentId) { continue }
+    $nodes += $entry
+
+    Write-Host "Querying reports for $($entry.NodeName) ($agentId)"
+    try {
+      $rResp = Invoke-DscPullApi -Uri "$baseUrl/Nodes(AgentId='$agentId')/Reports"
       $reports[$agentId] = @($rResp.value)
     }
     catch {
-      Write-Warning "No reports for node $($node.NodeName) ($agentId): $($_.Exception.Message)"
+      Write-Warning "No reports for node $($entry.NodeName) ($agentId): $($_.Exception.Message)"
       $reports[$agentId] = @()
     }
   }

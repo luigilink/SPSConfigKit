@@ -48,6 +48,25 @@
   script prompts interactively via Read-Host -AsSecureString. Ignored when
   only the .cer (public key) is available.
 
+.PARAMETER PullMode
+  Prepare the node for Pull mode. In Pull mode the resource modules are served
+  by the pull server as versioned .zip packages and downloaded by the LCM, so
+  installing them locally is unnecessary. This switch skips the Install-Module
+  phase (equivalent to -SkipModules) while still installing Chocolatey packages
+  and importing the document-encryption certificate.
+
+.PARAMETER SkipModules
+  Skip the local Install-Module phase regardless of mode. Useful when the pinned
+  modules are already present or provisioned by another mechanism.
+
+.PARAMETER ShareAccessCredential
+  Optional credential of the account the DSC File resources use to copy the
+  installation binaries from the SoftwarePackages share (the $SETUP /
+  svcspssetup account). When supplied the script mounts the share as that
+  account and verifies it can read it, catching the "Access is denied" failure
+  that otherwise only surfaces mid-apply. When omitted the check is skipped with
+  a reminder that the account needs Read on the share.
+
 .EXAMPLE
   .\Initialize-DscNode.ps1
 
@@ -57,6 +76,10 @@
 .EXAMPLE
   $pfxPwd = Read-Host 'PFX password' -AsSecureString
   .\Initialize-DscNode.ps1 -PfxPassword $pfxPwd
+
+.EXAMPLE
+  # Pull-mode node: the pull server serves the modules, so skip local install.
+  .\Initialize-DscNode.ps1 -PullMode
 #>
 param(
     [Parameter()]
@@ -65,7 +88,19 @@ param(
 
     [Parameter()]
     [System.Security.SecureString]
-    $PfxPassword
+    $PfxPassword,
+
+    [Parameter()]
+    [switch]
+    $PullMode,
+
+    [Parameter()]
+    [switch]
+    $SkipModules,
+
+    [Parameter()]
+    [System.Management.Automation.PSCredential]
+    $ShareAccessCredential
 )
 
 # Clear the host console
@@ -144,7 +179,11 @@ else {
 }
 
 # Install required PowerShell modules at their pinned versions.
-if ($configurationData.Modules.Count -ne 0) {
+if ($PullMode -or $SkipModules) {
+    $skipReason = if ($PullMode) { 'Pull mode: the pull server serves the resource modules as .zip packages' } else { '-SkipModules specified' }
+    Write-Host "Skipping local module installation ($skipReason)."
+}
+elseif ($configurationData.Modules.Count -ne 0) {
     if (-not $hasInternet) {
         Write-Warning 'Skipping Install-Module step: no internet access.'
     }
@@ -238,7 +277,79 @@ the .pfx, or copy it onto the share, then re-run this script.
     else {
         Write-Warning "No certificate files found at '$($cert.SourcePath)' (looked for '$($cert.CerFileName)' and '$($cert.PfxFileName)'). Run Initialize-DscEncryption.ps1 first."
     }
+
+    # Post-import validation: the certificate now in the store MUST match the
+    # public .cer on the share (same thumbprint). A mismatch means a stale or
+    # locally-generated cert is masking the real key pair, which surfaces later
+    # as the LCM error "Decryption failed" — catch it here with a clear message.
+    if ($cerExists) {
+        try {
+            $expectedThumb = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $cerPath).Thumbprint
+            $installed = @(Get-ChildItem -Path $store -ErrorAction SilentlyContinue |
+                Where-Object { $_.Subject -eq $cert.Subject })
+            $match = $installed | Where-Object { $_.Thumbprint -eq $expectedThumb } | Select-Object -First 1
+            if (-not $match) {
+                $present = ($installed | ForEach-Object { $_.Thumbprint }) -join ', '
+                Write-Warning @"
+Certificate thumbprint mismatch. The share's .cer is $expectedThumb but the
+'$($cert.Subject)' certificate(s) in '$store' are: $(if ($present) { $present } else { '(none)' }).
+MOFs are encrypted for $expectedThumb, so the LCM will fail with 'Decryption
+failed' until the matching .pfx (private key for $expectedThumb) is imported.
+Remove the stale certificate and re-import the correct .pfx from the share.
+"@
+            }
+            elseif ($pfxExists -and -not $match.HasPrivateKey) {
+                Write-Warning "Certificate $expectedThumb is present but WITHOUT its private key; the LCM cannot decrypt. Re-import the .pfx with -PfxPassword."
+            }
+            else {
+                Write-Host "Verified: '$($cert.Subject)' ($expectedThumb) is installed$(if ($match.HasPrivateKey) { ' with its private key' })."
+            }
+        }
+        catch {
+            Write-Warning "Unable to validate the installed certificate thumbprint against '$cerPath': $($_.Exception.Message)"
+        }
+    }
 }
 else {
     Write-Host 'DSC certificate import is not required as per configuration.'
+}
+
+# ---------------------------------------------------------------------------
+# Verify the share-copy account can read the SoftwarePackages share.
+# ---------------------------------------------------------------------------
+# The DSC File resources copy the installation binaries from the share using the
+# $SETUP (svcspssetup) credential. If that account lacks Read on the share, the
+# apply fails at run time with "Access is denied". Host the share on a MEMBER
+# server (e.g. the pull server), NOT on a domain controller: a node already has
+# a machine session to the DC, and Windows refuses a second identity to the same
+# server ("Multiple connections ... by the same user ... are not allowed").
+$sharePath = $configurationData.Certificate.SourcePath
+if ($sharePath -and $sharePath -like '\\*') {
+    if ($ShareAccessCredential) {
+        Write-Host "Verifying '$($ShareAccessCredential.UserName)' can read the share '$sharePath'..."
+        $probeDrive = 'SPSCfgShareProbe'
+        try {
+            New-PSDrive -Name $probeDrive -PSProvider FileSystem -Root $sharePath `
+                -Credential $ShareAccessCredential -ErrorAction Stop | Out-Null
+            Get-ChildItem -Path "$($probeDrive):\" -ErrorAction Stop | Out-Null
+            Write-Host "[+] '$($ShareAccessCredential.UserName)' can read '$sharePath'."
+        }
+        catch {
+            Write-Warning @"
+'$($ShareAccessCredential.UserName)' cannot read the share '$sharePath':
+$($_.Exception.Message)
+Grant that account Read on the share and its NTFS path, and make sure the share
+is hosted on a member server (not a domain controller). The DSC File resources
+will otherwise fail at apply time with 'Access is denied'.
+"@
+        }
+        finally {
+            if (Get-PSDrive -Name $probeDrive -ErrorAction SilentlyContinue) {
+                Remove-PSDrive -Name $probeDrive -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    else {
+        Write-Host "[i] Share-copy access check skipped (no -ShareAccessCredential). Ensure the share-copy account (svcspssetup) has Read on '$sharePath'."
+    }
 }

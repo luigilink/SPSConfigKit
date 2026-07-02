@@ -110,6 +110,19 @@ marker. If it fails, run `scripts\init\Initialize-DscEncryption.ps1`, import the
 
 From the authoring host (or a jump box that can reach every node):
 
+First, apply each node's LCM meta-configuration so the LCM knows which
+certificate to decrypt the encrypted MOF with (without this the apply fails with
+*"The Local Configuration Manager is not configured with a certificate"*):
+
+```powershell
+Set-DscLocalConfigurationManager `
+    -Path         C:\DSC\MOF\SPS `
+    -ComputerName 'APP1', 'WFE1', 'SCH1', 'OOS1' `
+    -Verbose
+```
+
+Then push the configuration itself:
+
 ```powershell
 Start-DscConfiguration `
     -Path     C:\DSC\MOF\SPS `
@@ -123,6 +136,15 @@ Start-DscConfiguration `
 `-Wait -Verbose` streams every resource invocation so you see exactly which
 SharePoint resource is configuring what. Drop `-Wait` to fire-and-forget
 and poll later with `Get-DscConfigurationStatus`.
+
+> **Host the `SoftwarePackages` share on a member server, not on a domain
+> controller.** The DSC `File` resources copy the binaries from the share using
+> the `svcspssetup` credential. Every node already has a machine session to the
+> DC, and Windows refuses a second identity to the same server (*"Multiple
+> connections to a server or shared resource by the same user ... are not
+> allowed"*), so a share on the DC fails at apply with *"Access is denied"*. The
+> pull server is a good host. Grant `svcspssetup` **Read** on the share and its
+> NTFS path.
 
 ### Option B &mdash; pull from a DSC pull server
 

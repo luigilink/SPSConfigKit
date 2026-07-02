@@ -89,6 +89,24 @@ Import-PfxCertificate -FilePath '\\PDC1\Softwarepackages\DscEncryption.pfx' `
 Do this on **every** SharePoint and Office Online Server node. A node that is
 missing the certificate cannot compile (authoring) or decrypt (apply).
 
+> **The LCM must be told which certificate to decrypt with.** Importing the
+> `.pfx` is necessary but not sufficient: the Local Configuration Manager needs
+> its `CertificateID` set to the encryption thumbprint, or it refuses the whole
+> document with *"The Local Configuration Manager is not configured with a
+> certificate"*. The kit handles this for you:
+>
+> - **Push** — the `Cfg*.ps1` configurations set
+>   `LocalConfigurationManager { CertificateID = $Node.Thumbprint }`, so the
+>   compiled `*.meta.mof` already carries it. Apply it **before** the main MOF:
+>
+>   ```powershell
+>   Set-DscLocalConfigurationManager -Path C:\DSC\MOF\SPS -ComputerName 'APP1' -Verbose
+>   ```
+>
+> - **Pull** — `scripts/pull/CfgLcmPull.ps1` resolves the thumbprint from the
+>   local `CN=DSC Encryption` certificate (or `-CertificateThumbprint`) and sets
+>   `CertificateID` in the LCM `Settings` automatically.
+
 ### 3. Compile
 
 ```powershell
@@ -126,12 +144,22 @@ $pfxPwd = Read-Host 'PFX password' -AsSecureString
 refreshes the `CertificateFile` / `Thumbprint` values in every `Cfg*.psd1`.
 Re-import the new `.pfx` on every node, then recompile and re-apply.
 
+> `-Force` **requires** `-PfxPassword`. Rotating the certificate without
+> exporting the matching `.pfx` would leave a stale private key on the share
+> while the `.cer` and the patched `.psd1` move to the new thumbprint — every
+> node would then encrypt against a key whose private half it never receives and
+> fail at apply with *"Decryption failed"*. The script refuses `-Force` without
+> `-PfxPassword` and, after export, verifies the `.cer`, the `.pfx` and the live
+> certificate all share one thumbprint.
+
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | Compilation error: *"the certificate ... could not be found"* / thumbprint not found | The authoring host cannot read the `.cer` at `CertificateFile`, or the node hasn't imported the `.pfx` | Confirm the share path in the patched `.psd1`; import the `.pfx` on the node |
 | Guard-rail reports clear-text credentials | `PSDscAllowPlainTextPassword` is still `$true`, or the `.psd1` wasn't patched | Run `Initialize-DscEncryption.ps1`; confirm the wildcard block shows `$false` + `CertificateFile` + `Thumbprint` |
+| Apply fails: *"The Local Configuration Manager is not configured with a certificate"* | The LCM `CertificateID` was never set | Apply the `*.meta.mof` with `Set-DscLocalConfigurationManager` (push), or run `CfgLcmPull.ps1` (pull), before the main MOF |
+| Apply fails: *"Decryption failed"* | The node holds a **different** `CN=DSC Encryption` cert than the one that encrypted the MOF (e.g. a locally-generated cert, or a stale `.pfx`) | Compare the share's `.cer` thumbprint with the node's cert; remove the wrong one and import the correct `.pfx`. `Initialize-DscNode.ps1` now flags this mismatch |
 | Apply fails to decrypt on the node | The node is missing the certificate **private key** | Re-import the `.pfx` (not just the `.cer`) into `Cert:\LocalMachine\My` |
 | MOF has `ContentType="PasswordEncrypted"` but no credentials encrypted | Mixed state after a partial edit | Delete the MOF, recompile from a clean patched `.psd1` |
 

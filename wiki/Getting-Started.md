@@ -105,8 +105,15 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    ```
 
 2. **Populate the SoftwarePackages share** (one-time, on the VM that hosts
-   the SMB share consumed by every node &mdash; typically the PDC, exposing
-   `\\PDC1\SoftwarePackages` backed by `F:\SoftwarePackages`):
+   the SMB share consumed by every node):
+
+   > [!IMPORTANT]
+   > Host this share on a **member server** (the pull server is a good choice),
+   > **not on a domain controller**. The DSC `File` resources copy the binaries
+   > using the `svcspssetup` credential; because every node already has a machine
+   > session to the DC, Windows refuses a second identity to the same server and
+   > the apply fails with *"Access is denied"*. Grant `svcspssetup` **Read** on
+   > the share and its NTFS path.
 
    ```powershell
    .\scripts\init\Initialize-SoftwarePackages.ps1
@@ -134,6 +141,13 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    > kit compiles into the MOFs. Skipping it leaves service-account passwords and
    > the farm passphrase in clear text inside the MOF files — an unsupported and
    > dangerous configuration. See [Securing Credentials](./Securing-Credentials).
+
+   > [!NOTE]
+   > Run this on the **authority host only** — the single machine that owns the
+   > key pair. Every other node *imports* the resulting `.pfx` via
+   > `Initialize-DscNode.ps1`; it never runs `Initialize-DscEncryption.ps1`
+   > itself. Running the generator on a node would mint a **different**
+   > certificate and cause *"Decryption failed"* at apply time.
 
    ```powershell
    $pfxPwd = Read-Host 'PFX password' -AsSecureString

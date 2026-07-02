@@ -25,7 +25,7 @@
 .DESCRIPTION
   This script is meant to run ONCE, on the single VM that hosts the SMB share
   used by every other node in the SPSConfigKit lab (for example
-  \\PDC1\SoftwarePackages, backed by F:\SoftwarePackages).
+  \\PULL\SoftwarePackages, backed by F:\SoftwarePackages).
 
   Reads a manifest (Initialize-SoftwarePackages.psd1 by default, located next
   to this script) and:

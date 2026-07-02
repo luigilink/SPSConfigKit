@@ -52,7 +52,13 @@
     }
   )
   NonNodeData = @{
-    SourcePath  = '\\PDC1\Softwarepackages'
+    # Single share root — host the SoftwarePackages share on a MEMBER server
+    # (e.g. the pull server), NOT on a domain controller: a node already has a
+    # machine session to the DC, and Windows refuses a second identity to the same
+    # server, so a share on the DC fails at apply with "Access is denied".
+    # The certificate paths below are derived from this by CfgAppSps.ps1
+    # (SourcePath + CerFileName / PfxFileName), so the host is defined only here.
+    SourcePath  = '\\PULL\Softwarepackages'
     DomainName  = 'contoso.com'
     Drives      = @{
       Data = 'F:'
@@ -63,26 +69,26 @@
         @{
           Name         = 'DscPullCert'
           FriendlyName = 'DSCPull'
-          CertPath     = '\\PDC1\Softwarepackages\DscPull.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\DscPull.pfx'
+          CerFileName  = 'DscPull.cer'
+          PfxFileName  = 'DscPull.pfx'
         }
         @{
           Name         = 'SharePointCert'
           FriendlyName = 'SharePoint'
-          CertPath     = '\\PDC1\Softwarepackages\SharePoint.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\SharePoint.pfx'
+          CerFileName  = 'SharePoint.cer'
+          PfxFileName  = 'SharePoint.pfx'
         }
         @{
           Name         = 'OfficeOnlineCert'
           FriendlyName = 'OOSCertSSL'
-          CertPath     = '\\PDC1\Softwarepackages\OfficeOnline.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\OfficeOnline.pfx'
+          CerFileName  = 'OfficeOnline.cer'
+          PfxFileName  = 'OfficeOnline.pfx'
         }
         @{
           Name         = 'SQLServerCert'
           FriendlyName = 'SQLCertSSL'
-          CertPath     = '\\PDC1\Softwarepackages\SQLServer.cer'
-          PfxPath      = '\\PDC1\Softwarepackages\SQLServer.pfx'
+          CerFileName  = 'SQLServer.cer'
+          PfxFileName  = 'SQLServer.pfx'
         }
       )
     }
@@ -128,7 +134,7 @@
       # Each Subfolders entry is also optional and defaults to BIN / LP / CU respectively.
       # CUFileName may be a filename (resolved relative to <DestinationPath>\<Subfolders.CumulativeUpdate>)
       # or an absolute path (used as-is).
-      # SourcePath                  = '\\PDC1\Softwarepackages\OOS'
+      # SourcePath                  = '\\PULL\Softwarepackages\OOS'
       # DestinationPath             = 'F:\SoftwarePackages\OOS'
       # Subfolders                  = @{ Binaries = 'BIN'; LanguagePack = 'LP'; CumulativeUpdate = 'CU' }
       CUFileName                  = 'wacserver2019-kb5002752-fullfile-x64-glb.exe'
@@ -149,7 +155,7 @@
       #   SourcePath      = <NonNodeData.SourcePath>\SPS
       #   DestinationPath = <Drives.Data>\SoftwarePackages\SPS
       # Each Subfolders entry is also optional and defaults to BIN / LP / CU respectively.
-      # SourcePath                = '\\PDC1\Softwarepackages\SPS'
+      # SourcePath                = '\\PULL\Softwarepackages\SPS'
       # DestinationPath           = 'F:\SoftwarePackages\SPS'
       # Subfolders                = @{ Binaries = 'BIN'; LanguagePack = 'LP'; CumulativeUpdate = 'CU' }
       # Optional list of SharePoint Language Pack locale codes to install (e.g. @('fr-fr','es-es','de-de')).
@@ -159,7 +165,7 @@
       LanguagePacks             = @('fr-fr')
       # CU package: either an absolute path (used as-is, current default) or a relative path
       # resolved under <DestinationPath>\<Subfolders.CumulativeUpdate>.
-      UberCumulativeUpdate      = '\\PDC1\Softwarepackages\SPS\CU\uber-subscription-kb5002773-fullfile-x64-glb.exe'
+      UberCumulativeUpdate      = '\\PULL\Softwarepackages\SPS\CU\uber-subscription-kb5002773-fullfile-x64-glb.exe'
       FarmConfigDatabaseName    = 'DSPS_Admin_Config'
       AdminContentDatabaseName  = 'DSPS_Admin_Content'
       CentralAdministrationPort = '5555'

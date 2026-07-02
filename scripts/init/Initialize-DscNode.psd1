@@ -31,7 +31,7 @@
     # Set Ensure='Absent' to skip the import step entirely.
     Certificate = @{
         Ensure      = 'Present'
-        SourcePath  = '\\PDC1\Softwarepackages'
+        SourcePath  = '\\PULL\Softwarepackages'
         CerFileName = 'DscEncryption.cer'
         PfxFileName = 'DscEncryption.pfx'
         Subject     = 'CN=DSC Encryption'

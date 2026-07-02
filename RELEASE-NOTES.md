@@ -1,49 +1,27 @@
 # SPSConfigKit - Release Notes
 
-## [1.3.0] - 2026-07-02
-
-### Added
-
-- `scripts/dashboard/SPSDscDashboard.ps1` + `SPSDscDashboard.psd1` (#6, #8, #9, #10, #11)
-  - New DSC compliance dashboard tool, driven by `-Action` and configured by a
-    tracked `SPSDscDashboard.psd1` settings file (matching the SPSWakeUp `-Action`
-    and SPSUserSync `.psd1` conventions). Actions: `Default` generates a
-    self-contained, dependency-free `Dashboard.html` (inline CSS/JS, SVG donut — no
-    CDN) classifying every node as Compliant / Non-Compliant / Failed /
-    Unresponsive with drift counts, last-report time, a per-node detail view and a
-    persisted OS-aware light/dark theme toggle; `Install` registers/updates a
-    Scheduled Task that refreshes it on a schedule into the IIS-served folder;
-    `Uninstall` removes it. `-MockDataPath` renders offline. The node list comes
-    from a shared manifest folder (populated by `CfgLcmPull.ps1`) queried via the
-    keyed OData endpoint `Nodes(AgentId='…')/Reports`, because the classic pull
-    server's OData API cannot enumerate nodes — `GET /Nodes` returns HTTP 400
-    *"resourceKeys is unexpected for MSFT.DSCNode"* (#8). The refresh schedule
-    enforces a 30-minute floor: nodes only report on their LCM consistency interval
-    (typically 60-120 min), so a shorter refresh adds load without newer data (#10).
-    Runs the task as SYSTEM by default; supports a domain `RunAsUser` for remote
-    manifests. (Consolidates the earlier `New-SPSDscDashboard.ps1` and
-    `Register-SPSDscDashboardTask.ps1` into one `-Action`-driven script (#11).)
-    The script exposes only `-Action`, `-InstallAccount` and `-InputFile`; every
-    other setting lives in the tracked `SPSDscDashboard.psd1`. The refresh task is
-    created in the `\SharePoint\` Task Scheduler folder (configurable via
-    `Schedule.TaskPath`), alongside the other SPS* project tasks.
-- `scripts/dashboard/README.md` and `scripts/dashboard/samples/`
-  - Dashboard documentation plus a `mock-data.json` fixture and `New-MockData.ps1`
-    so the page can be generated and reviewed without a live pull server.
+## [1.3.1] - 2026-07-02
 
 ### Changed
 
-- `scripts/pull/CfgLcmPull.ps1` (#7, #8)
-  - Enriched the LCM pull registration: added `-UpdateNow` (trigger the first pull
-    immediately so the node applies its config and sends its first status report
-    right away) and `-DomainDefaultsPath`, which resolves `-DSCRegistrationKey` /
-    `-DSCPullServerUrl` per Active Directory domain from a git-ignored
-    `CfgLcmPull.DomainDefaults.psd1` (template `*.sample.psd1` tracked). HTTPS/443
-    and the `ReportServerWeb` block are kept so nodes report to the dashboard.
-  - Added `-NodeManifestPath`: after registering, each node publishes a
-    `<NodeName>.json` (NodeName + AgentId + ConfigurationNames) to a shared folder
-    so the compliance dashboard can enumerate nodes (also resolvable per-domain via
-    the `NodeManifestPath` key in the defaults file).
+- Sample share host moved off the domain controller (#13)
+  - Every sample and wiki reference to the `SoftwarePackages` share now points at
+    `\\PULL\Softwarepackages` (a member server) instead of `\\PDC1\Softwarepackages`
+    (the domain controller). The v1.2.2 docs already required hosting the share on
+    a member server — a node holds a machine session to the DC, and Windows refuses
+    a second identity to the same server, so a share on the DC fails at apply with
+    "Access is denied" — but the samples still pointed at the DC.
+- Certificate paths are now DRY (#13)
+  - `CfgAppSql`/`CfgAppSps`/`CfgAppPdc`/`CfgAppPull` psd1 cert entries carry only
+    the `.cer` / `.pfx` **file name** (`CerFileName` / `PfxFileName`); the full path
+    is derived by the Cfg*.ps1 scripts from the single `NonNodeData.SourcePath`.
+    The share host is therefore declared exactly once per configuration — changing
+    servers is a one-line edit and the `SourcePath`/`CertPath` divergence that
+    caused earlier PDC1↔PULL mismatches can no longer happen. An explicit
+    `CertPath` / `PfxPath` on an entry is still honoured (backward compatible).
+    `NonNodeData.SourcePath` was added to the PDC and PULL configurations, and the
+    `ConfigData.Tests.ps1` cert checks accept either the file-name or explicit-path
+    form.
 
 ## Changelog
 

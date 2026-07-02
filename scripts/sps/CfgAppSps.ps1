@@ -92,6 +92,22 @@ try {
     throw "Missing $inputFile"
   }
 
+  # DRY: derive certificate paths from the single share root (NonNodeData.SourcePath)
+  # + each entry's CerFileName / PfxFileName, so the share host is defined only once.
+  # An explicit CertPath / PfxPath on an entry is still honoured (backward compatible).
+  $certSourcePath = $configurationData.NonNodeData.SourcePath
+  if ($configurationData.NonNodeData.ADC -and $configurationData.NonNodeData.ADC.certificates) {
+    foreach ($cert in $configurationData.NonNodeData.ADC.certificates) {
+      $certRoot = $certSourcePath.TrimEnd('\\')
+      if ([string]::IsNullOrWhiteSpace($cert.CertPath) -and -not [string]::IsNullOrWhiteSpace($cert.CerFileName)) {
+        $cert.CertPath = '{0}\{1}' -f $certRoot, $cert.CerFileName
+      }
+      if ([string]::IsNullOrWhiteSpace($cert.PfxPath) -and -not [string]::IsNullOrWhiteSpace($cert.PfxFileName)) {
+        $cert.PfxPath = '{0}\{1}' -f $certRoot, $cert.PfxFileName
+      }
+    }
+  }
+
   if ([string]::IsNullOrWhiteSpace($secretsFile)) {
     Write-Host 'No secrets file provided. Try to use Secrets.psd1 in the parent directory of the script.'
     $secretsFile = Join-Path -Path (Split-Path -Path $scriptBasePath -Parent) -ChildPath 'Secrets.psd1'

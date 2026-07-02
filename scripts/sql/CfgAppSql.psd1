@@ -17,7 +17,7 @@
     }
   )
   NonNodeData = @{
-    SourcePath  = '\\PDC1\Softwarepackages'
+    SourcePath  = '\\PULL\Softwarepackages'
     Drives      = @{
       Data = 'F:'
       Logs = 'G:'
@@ -29,7 +29,7 @@
     #   DestinationPath = <Drives.Data>\SoftwarePackages\SQL
     # SQL setup.exe is expected at the root of DestinationPath (no BIN/LP/CU subfolders).
     SQL         = @{
-      # SourcePath      = '\\PDC1\Softwarepackages\SQL'
+      # SourcePath      = '\\PULL\Softwarepackages\SQL'
       # DestinationPath = 'F:\SoftwarePackages\SQL'
     }
   }

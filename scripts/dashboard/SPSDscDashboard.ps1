@@ -248,7 +248,13 @@ function Get-DscNodeData {
     Write-Host "Querying reports for $($entry.NodeName) ($agentId)"
     try {
       $rResp = Invoke-DscPullApi -Uri "$baseUrl/Nodes(AgentId='$agentId')/Reports"
-      $reports[$agentId] = @($rResp.value)
+      # Cap the reports kept per node (newest first) so a node with a huge
+      # StatusReport history on the ESENT backend doesn't blow up memory; only
+      # the latest compliance report is needed for the dashboard anyway.
+      $allReports = @($rResp.value) |
+        Sort-Object { if ($_.StartTime) { [DateTime]$_.StartTime } else { [DateTime]::MinValue } } -Descending |
+        Select-Object -First $MaxReportsPerNode
+      $reports[$agentId] = @($allReports)
     }
     catch {
       Write-Warning "No reports for node $($entry.NodeName) ($agentId): $($_.Exception.Message)"
@@ -369,7 +375,7 @@ function ConvertTo-NodeCompliance {
 # HTML rendering
 # ---------------------------------------------------------------------------
 
-function New-DashboardHtml {
+function ConvertTo-DashboardHtml {
   param(
     [System.Object[]] $Nodes,
     [System.String]   $Heading
@@ -772,7 +778,7 @@ function Invoke-DashboardGenerate {
     ConvertTo-NodeCompliance -Node $node -Reports $nodeReports
   }
 
-  $html = New-DashboardHtml -Nodes @($compliance) -Heading $Title
+  $html = ConvertTo-DashboardHtml -Nodes @($compliance) -Heading $Title
   # UTF-8 with BOM so browsers and Windows tooling agree on the encoding.
   $enc = New-Object System.Text.UTF8Encoding($true)
   [System.IO.File]::WriteAllText($OutputPath, $html, $enc)
@@ -788,6 +794,8 @@ function Assert-Elevated {
 }
 
 function Invoke-DashboardInstall {
+  [CmdletBinding(SupportsShouldProcess = $true)]
+  param()
   Assert-Elevated
 
   $selfPath = $PSCommandPath
@@ -855,6 +863,8 @@ function Invoke-DashboardInstall {
 }
 
 function Invoke-DashboardUninstall {
+  [CmdletBinding(SupportsShouldProcess = $true)]
+  param()
   Assert-Elevated
   $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
   if (-not $existing) {

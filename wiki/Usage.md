@@ -126,14 +126,22 @@ and poll later with `Get-DscConfigurationStatus`.
 
 ### Option B &mdash; pull from a DSC pull server
 
-1. Publish the MOFs (and checksums) to the pull-server's
+1. Stand up the pull server with `scripts/pull/CfgAppPull.ps1`, then run
+   `scripts/pull/Set-SPSPullServerPermission.ps1 -AppPoolIdentity '<pull AppPool account>'`
+   **once, elevated, on the pull server**. That post-configuration step grants
+   the pull-server AppPool identity write access to the DSC service folder so the
+   ESENT repository (`Devices.edb`) can be created &mdash; without it, no reports
+   are stored. See `scripts/pull/README.md` for the full pull workflow.
+2. Publish the MOFs (and checksums) to the pull-server's
    `Configuration` folder. The sample pull server in `scripts/pull/`
    exposes `C:\Program Files\WindowsPowerShell\DscService\Configuration`.
-2. Register every node's LCM against the pull server (with the
-   pull-server thumbprint pinned). The bootstrap step already imports the
-   correct certificate, so registration succeeds out of the box.
-3. The LCM downloads the MOF on its configured interval (default 30 min)
-   and applies it.
+3. Register every node's LCM against the pull server with
+   `scripts/pull/CfgLcmPull.ps1` (pass `-UpdateNow` to pull immediately). The
+   bootstrap step already imports the correct certificate, so registration
+   succeeds out of the box.
+4. The LCM downloads the MOF on its configured interval (default 30 min)
+   and applies it, then reports status back &mdash; which you can watch with the
+   [compliance dashboard](./Home) (`scripts/dashboard/New-SPSDscDashboard.ps1`).
 
 > The reference `scripts/pull/CfgAppPull.ps1` is provided so the sample
 > lab can stand up a pull server quickly. **Do not deploy it as-is in

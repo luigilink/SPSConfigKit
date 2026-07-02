@@ -134,14 +134,18 @@ and poll later with `Get-DscConfigurationStatus`.
    the DSC service folder so the ESENT repository (`Devices.edb`) can be created
    &mdash; without it, no reports are stored. See `scripts/pull/README.md` for the
    full pull workflow.
-2. Publish the MOFs (and checksums) to the pull-server's
+2. Publish the resource modules with `scripts/pull/Publish-SPSPullModules.ps1`
+   (defaults to every pinned module in `Initialize-DscNode.psd1`). This packages
+   each module as `<Name>_<Version>.zip` + checksum in the pull server's `Modules`
+   folder so nodes can download the resources their MOF imports.
+3. Publish the MOFs (and checksums) to the pull-server's
    `Configuration` folder. The sample pull server in `scripts/pull/`
    exposes `C:\Program Files\WindowsPowerShell\DscService\Configuration`.
-3. Register every node's LCM against the pull server with
+4. Register every node's LCM against the pull server with
    `scripts/pull/CfgLcmPull.ps1` (pass `-UpdateNow` to pull immediately). The
    bootstrap step already imports the correct certificate, so registration
    succeeds out of the box.
-4. The LCM downloads the MOF on its configured interval (default 30 min)
+5. The LCM downloads the MOF on its configured interval (default 30 min)
    and applies it, then reports status back &mdash; which you can watch with the
    [compliance dashboard](./Home) (`scripts/dashboard/New-SPSDscDashboard.ps1`).
 

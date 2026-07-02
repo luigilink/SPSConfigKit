@@ -47,11 +47,26 @@ This folder configures the two halves of a classic Windows DSC pull deployment:
    > cannot create `Devices.edb`, so no reports are stored and the compliance
    > dashboard stays empty.
 
-3. **Publish the node MOFs** (compiled by `CfgAppSps.ps1`, one `<NodeName>.mof`
+3. **Publish the resource modules** — package the pinned DSC modules as
+   `<Name>_<Version>.zip` (+ checksum) into the pull server's module folder so
+   Pull-mode nodes can download the resources their MOF imports:
+
+   ```powershell
+   # Every pinned module from Initialize-DscNode.psd1 (recommended)
+   .\Publish-SPSPullModules.ps1
+
+   # …or only the modules a given configuration imports
+   .\Publish-SPSPullModules.ps1 -ConfigurationScriptPath ..\sps\CfgAppSps.ps1
+   ```
+
+   Without the module packages, a node's LCM fails at apply time with *"could not
+   find the module"*.
+
+4. **Publish the node MOFs** (compiled by `CfgAppSps.ps1`, one `<NodeName>.mof`
    per node) plus their `.mof.checksum` into the pull server's `Configuration`
    folder (`C:\Program Files\WindowsPowerShell\DscService\Configuration`).
 
-4. **Register each node's LCM in Pull mode** — on every SharePoint / OOS node:
+5. **Register each node's LCM in Pull mode** — on every SharePoint / OOS node:
 
    ```powershell
    .\CfgLcmPull.ps1 -DSCRegistrationKey '<guid>' `
@@ -63,11 +78,24 @@ This folder configures the two halves of a classic Windows DSC pull deployment:
    configuration and sends its first status report right away — which populates
    `Devices.edb` and the [compliance dashboard](../dashboard/README.md).
 
-5. **Watch compliance** — generate the dashboard on the pull server:
+6. **Watch compliance** — generate the dashboard on the pull server:
 
    ```powershell
    ..\dashboard\New-SPSDscDashboard.ps1 -PullServerUrl 'https://localhost/PSDSCPullServer.svc' -SkipCertificateCheck -OutputPath .\Dashboard.html
    ```
+
+## `Publish-SPSPullModules.ps1` parameters
+
+| Parameter | Purpose |
+| --- | --- |
+| `-ManifestPath` | `Initialize-DscNode.psd1` module manifest (source of truth). Default `..\init\Initialize-DscNode.psd1`. Ignored with `-ConfigurationScriptPath`. |
+| `-ConfigurationScriptPath` | Optional. Derive the module list from a `Cfg*.ps1`'s `Import-DscResource` lines (parsed via the AST) instead of the manifest. |
+| `-ModulePath` | Destination folder served by the pull server. Default `"$env:PROGRAMFILES\WindowsPowerShell\DscService\Modules"`. |
+| `-SourceModulesPath` | Where the modules are installed locally. Default `"$env:PROGRAMFILES\WindowsPowerShell\Modules"`. |
+
+Requires WMF 5.0+ (`Compress-Archive`), supports `-WhatIf`, and is idempotent
+(archives are refreshed in place). Fails if a pinned module isn't installed
+locally — run `Initialize-DscNode.ps1` first.
 
 ## `Set-SPSPullServerPermission.ps1` parameters
 

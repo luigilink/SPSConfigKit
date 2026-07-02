@@ -1,56 +1,52 @@
 # SPSConfigKit - Release Notes
 
-## [1.2.1] - 2026-07-02
+## [1.2.2] - 2026-07-02
 
 ### Fixed
 
-- `scripts/pull/CfgAppPull.ps1`
-  - Removed the `Script MIDDLEWARE_PullServer_DscServiceAcl` resource that granted
-    the pull-server AppPool identity write access to the DSC service folder via
-    `Get-Acl` / `Set-Acl`. That folder is owned by `NT SERVICE\TrustedInstaller`
-    and grants SYSTEM / Administrators only *Modify* (no Change-Permissions /
-    WRITE_DAC), so `Set-Acl` failed at apply time with
-    *"Attempted to perform an unauthorized operation"* — breaking the whole PULL
-    `Start-DscConfiguration` run. The grant is now a dedicated post-configuration
-    script (see Added) that takes ownership first, which the DSC consistency loop
-    should not do.
+- LCM decryption certificate (`CertificateID`)
+  - Since 1.2.0 made MOF encryption mandatory, every node's MOF carries encrypted
+    credentials, but no LCM configuration told the LCM which certificate to
+    decrypt them with. `Start-DscConfiguration` / `Test-DscConfiguration` failed
+    on the first resource with *"The Local Configuration Manager is not configured
+    with a certificate"*. `CfgAppSql.ps1`, `CfgAppSps.ps1` and `CfgAppPdc.ps1` now
+    set `LocalConfigurationManager.CertificateID = $Node.Thumbprint`, and
+    `CfgLcmPull.ps1` sets `Settings.CertificateID` (resolved from the local
+    `CN=DSC Encryption` certificate or the new `-CertificateThumbprint`).
+- Share-copy credential harmonised on `$SETUP`
+  - The `File` resources that copy binaries from the SoftwarePackages share used
+    three different accounts (`$PULLSETUP` in SQL, `$ADSETUP` for the SharePoint
+    and OOS copies). They now all use `$SETUP` (svcspssetup), so a single account
+    needs Read on the share. Genuine Active Directory operations keep `$ADSETUP`.
+- `Initialize-DscEncryption.ps1` certificate drift
+  - The script always re-exported the public `.cer` but only exported the private
+    `.pfx` when `-PfxPassword` was supplied, so rotating without it left a stale
+    `.pfx` and nodes failed with *"Decryption failed"*. `-Force` now requires
+    `-PfxPassword`, and the script verifies the `.cer`, the `.pfx` and the active
+    certificate all share one thumbprint.
 
 ### Added
 
-- `scripts/pull/Set-SPSPullServerPermission.ps1`
-  - New one-shot, elevated post-configuration script that grants the pull-server
-    AppPool identity Modify on the DSC service folder (`takeown /a` then
-    `icacls /grant …:(OI)(CI)M`), so the ESENT repository (`Devices.edb`) can be
-    created. The AppPool identity is resolved from `Secrets.psd1` (`IISPULLAPP`)
-    by default so it always matches the account `CfgAppPull.ps1` assigns, with
-    `-AppPoolIdentity` as an explicit override. Idempotent, `-WhatIf`-aware, and
-    parameterised by `-SecretsFile` / `-AppPoolSecretName` / `-DscServicePath` /
-    `-TakeOwnership`, with a final verification.
-- `scripts/pull/Publish-SPSPullModules.ps1`
-  - New script that packages the pinned DSC resource modules as
-    `<Name>_<Version>.zip` + checksum into the pull server's `Modules` folder, so
-    Pull-mode nodes can download the resources their MOF imports (without them the
-    LCM fails at apply time with *"could not find the module"*). Reads the module
-    list from `Initialize-DscNode.psd1` by default, or derives it from a
-    configuration's `Import-DscResource` lines via the AST with
-    `-ConfigurationScriptPath` (replacing the fragile string-matching of the older
-    ad-hoc `PrepareModules.ps1`). Idempotent, `-WhatIf`-aware, and parameterised by
-    `-ManifestPath` / `-ModulePath` / `-SourceModulesPath`.
-- `scripts/pull/README.md`
-  - Documents the end-to-end pull workflow (stand up server → grant permission →
-    publish modules → publish MOFs → register LCMs with `-UpdateNow` → watch the
-    dashboard) and why the ACL grant is a separate privileged step rather than a
-    DSC resource.
-- `.gitignore`
-  - Added a properly tracked `.gitignore` (ignoring `.vscode/`, `**/.DS_Store`,
-    and the real `CfgLcmPull.DomainDefaults.psd1`), dropping the historical
-    self-ignore line that kept `.gitignore` untracked across branches.
+- `Initialize-DscNode.ps1` hardening
+  - Post-import validation that the certificate installed in the node's store
+    matches the share's `.cer` thumbprint (and has its private key), flagging the
+    mismatch that otherwise surfaces later as *"Decryption failed"*.
+  - `-PullMode` / `-SkipModules` switches to skip the local `Install-Module` phase
+    (in Pull mode the pull server serves the modules as `.zip` packages).
+  - `-ShareAccessCredential` to verify the share-copy account can actually read
+    the SoftwarePackages share before the DSC apply does.
+- `CfgLcmPull.ps1`: `-CertificateThumbprint` / `-CertificateSubject` parameters to
+  control the LCM decryption certificate lookup.
 
 ### Changed
 
-- `wiki/Usage.md`
-  - The pull-server option now documents the mandatory
-    `Set-SPSPullServerPermission.ps1` step and points at `scripts/pull/README.md`.
+- Wiki (`Securing-Credentials`, `Usage`, `Getting-Started`)
+  - Document that the LCM `CertificateID` must be set (apply the `*.meta.mof` with
+    `Set-DscLocalConfigurationManager` before pushing), the `-Force`/`-PfxPassword`
+    rotation guard-rail, hosting the SoftwarePackages share on a member server
+    (not a domain controller) with `svcspssetup` Read, and running
+    `Initialize-DscEncryption.ps1` on the authority host only. New troubleshooting
+    rows for *"LCM is not configured with a certificate"* and *"Decryption failed"*.
 
 ## Changelog
 

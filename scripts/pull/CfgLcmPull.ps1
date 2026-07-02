@@ -26,16 +26,35 @@
     CfgLcmPull.ps1 cleans the DSC configuration cache and configures the LCM
     to register with a DSC pull server published on HTTPS / port 443 (matching
     the pull server defined in CfgAppPull.ps1). Compatible with WMF 5.1.
-    Triggering Update-DscConfiguration is intentionally left to the caller so
-    the registration and the first pull can be scheduled / monitored
-    independently.
+    By default it only registers the LCM; pass -UpdateNow to also trigger the
+    first pull (Update-DscConfiguration -Wait) so the node fetches, applies and
+    reports its configuration immediately — which populates the pull server's
+    reports and therefore the compliance dashboard.
 
     .PARAMETER DSCRegistrationKey
     Registration key (GUID) used by the LCM to authenticate against the pull
-    server. Overrides the per-domain default.
+    server. Optional when -DomainDefaultsPath resolves it for the current domain;
+    when supplied it overrides the per-domain default.
 
     .PARAMETER DSCPullServerUrl
-    Full URL of the pull server OData endpoint, e.g. https://pull.contoso.com/PSDSCPullServer.svc
+    Full URL of the pull server OData endpoint, e.g.
+    https://pull.contoso.com/PSDSCPullServer.svc. Optional when -DomainDefaultsPath
+    resolves it for the current domain; when supplied it overrides the default.
+    SPSConfigKit expects an HTTPS/443 pull server; a non-HTTPS URL is warned about.
+
+    .PARAMETER DomainDefaultsPath
+    Optional path to a .psd1 that maps each domain FQDN to its pull-server
+    RegistrationKey and Url, so the correct pull server is selected automatically
+    per domain without editing this script. When -DSCRegistrationKey /
+    -DSCPullServerUrl are omitted, the entry for the current domain is used. Keep
+    the real file OUT of source control (it holds registration keys); a
+    CfgLcmPull.DomainDefaults.sample.psd1 ships as a template. Shape:
+        @{ 'contoso.com' = @{ RegistrationKey = '<guid>'; PullServerUrl = 'https://pull.contoso.com/PSDSCPullServer.svc' } }
+
+    .PARAMETER UpdateNow
+    After registering the LCM in Pull mode, trigger an immediate
+    Update-DscConfiguration -Wait so the node pulls, applies and reports right
+    away (populating the compliance dashboard). Ignored with -DisableLCM.
 
     .PARAMETER ConfigurationNames
     Names of the configurations on the pull server the node should pull.
@@ -74,6 +93,10 @@
                      -DSCPullServerUrl   'https://pull.contoso.com/PSDSCPullServer.svc'
 
     .EXAMPLE
+    # Resolve the pull server automatically for this domain and pull immediately
+    .\CfgLcmPull.ps1 -DomainDefaultsPath .\CfgLcmPull.DomainDefaults.psd1 -UpdateNow
+
+    .EXAMPLE
     .\CfgLcmPull.ps1 -DisableLCM
 
     .NOTES
@@ -84,15 +107,22 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
+    [Parameter()]
     [System.String]
     $DSCRegistrationKey,
 
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
+    [Parameter()]
     [System.String]
     $DSCPullServerUrl,
+
+    [Parameter()]
+    [ValidateScript({ Test-Path -LiteralPath $_ -PathType Leaf })]
+    [System.String]
+    $DomainDefaultsPath,
+
+    [Parameter()]
+    [switch]
+    $UpdateNow,
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
@@ -152,6 +182,33 @@ Write-Output "| PowerShell    $psVersion"
 Write-Output "| Target node   $dscNodeTarget"
 Write-Output "| Domain        $currentDomainName"
 Write-Output '-----------------------------------------------'
+
+# Resolve the registration key / pull-server URL from a per-domain defaults file
+# when they were not passed explicitly. This mirrors the operational convenience
+# of auto-selecting the right pull server per domain WITHOUT baking any
+# registration key into source control: the defaults file is customer-provided and
+# git-ignored, and only a .sample template ships in the repo.
+if (-not $DisableLCM) {
+    if (($DomainDefaultsPath) -and
+        ([string]::IsNullOrWhiteSpace($DSCRegistrationKey) -or [string]::IsNullOrWhiteSpace($DSCPullServerUrl))) {
+        Write-Output ("Resolving pull-server defaults for domain '{0}' from {1}" -f $currentDomainName, $DomainDefaultsPath)
+        $domainDefaults = Import-PowerShellDataFile -Path $DomainDefaultsPath
+        $match = $domainDefaults[$currentDomainName]
+        if (-not $match) {
+            throw ("No entry for domain '{0}' in {1}. Add one, or pass -DSCRegistrationKey / -DSCPullServerUrl explicitly." -f $currentDomainName, $DomainDefaultsPath)
+        }
+        if ([string]::IsNullOrWhiteSpace($DSCRegistrationKey)) { $DSCRegistrationKey = $match.RegistrationKey }
+        if ([string]::IsNullOrWhiteSpace($DSCPullServerUrl)) { $DSCPullServerUrl = $match.PullServerUrl }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($DSCRegistrationKey) -or [string]::IsNullOrWhiteSpace($DSCPullServerUrl)) {
+        throw 'Pull mode requires -DSCRegistrationKey and -DSCPullServerUrl (pass them directly, or use -DomainDefaultsPath with an entry for this domain).'
+    }
+
+    if ($DSCPullServerUrl -notlike 'https://*') {
+        Write-Warning ("Pull server URL '{0}' is not HTTPS. SPSConfigKit expects an HTTPS/443 pull server; otherwise registration and reports travel in clear text." -f $DSCPullServerUrl)
+    }
+}
 
 [DSCLocalConfigurationManager()]
 Configuration LCMConfig
@@ -404,6 +461,20 @@ try {
 }
 catch {
     Write-Warning -Message ('Unable to enable "File and Printer Sharing" on the Domain profile: {0}' -f $_.Exception.Message)
+}
+
+# Step 9 - Optionally trigger the first pull so the node fetches, applies and
+# reports its configuration immediately. This is what populates the pull server's
+# StatusReport records (and therefore the compliance dashboard). Skipped in Push
+# mode; a failure here is non-fatal because the LCM will pull on its next interval.
+if ($UpdateNow -and -not $DisableLCM) {
+    try {
+        Write-Output 'Triggering an immediate pull (Update-DscConfiguration -Wait)'
+        Update-DscConfiguration -Wait -Verbose -ErrorAction Stop
+    }
+    catch {
+        Write-Warning -Message ('Immediate Update-DscConfiguration failed (the LCM will still pull on its next interval): {0}' -f $_.Exception.Message)
+    }
 }
 
 $endDate = Get-Date

@@ -104,16 +104,54 @@ when printing.
 
 ## Scheduling a periodic refresh
 
-The dashboard is a point-in-time snapshot; regenerate it on a schedule. Example
-Scheduled Task that refreshes every 15 minutes on the pull server:
+The dashboard is a point-in-time snapshot with no server-side runtime, so
+"refreshing" it means regenerating the HTML. Use the bundled helper to install a
+Scheduled Task on the pull server that regenerates it into the IIS-served folder
+— the team then just browses `https://pull.contoso.com/Dashboard.html`:
 
 ```powershell
-$action  = New-ScheduledTaskAction -Execute 'powershell.exe' `
-    -Argument '-NoProfile -ExecutionPolicy Bypass -File "C:\SPSConfigKit\scripts\dashboard\New-SPSDscDashboard.ps1" -PullServerUrl "https://localhost/PSDSCPullServer.svc" -OutputPath "C:\inetpub\PSDSCPullServer\Dashboard.html" -SkipCertificateCheck'
-$trigger  = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15)
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-Register-ScheduledTask -TaskName 'SPSConfigKit-DscDashboard' -Action $action -Trigger $trigger -Principal $principal
+# Elevated, on the pull server. Refresh every 30 minutes as SYSTEM, run once now.
+.\Register-SPSDscDashboardTask.ps1 `
+    -NodeManifestPath 'F:\DscNodeManifest' `
+    -SkipCertificateCheck `
+    -RunNow
 ```
+
+**Align the interval with your farm's LCM, and never go below 30 minutes.** DSC
+nodes only submit a new status report on their consistency interval
+(`ConfigurationModeFrequencyMins`, typically 60–120 minutes), so refreshing more
+often than every 30 minutes just adds load without surfacing any newer data. The
+helper enforces a 30-minute floor. Examples:
+
+| Farm LCM `ConfigurationModeFrequencyMins` | Suggested `-IntervalMinutes` |
+| --- | --- |
+| 60 | 30 |
+| 120 | 60 |
+
+```powershell
+# Farm with a 120-minute LCM consistency interval
+.\Register-SPSDscDashboardTask.ps1 -NodeManifestPath 'F:\DscNodeManifest' -IntervalMinutes 60 -SkipCertificateCheck
+```
+
+The task runs as SYSTEM by default (fine for a local manifest folder and a
+localhost pull server). If the node manifest is on a **remote** share, run the
+task under a domain account that can read it: `-RunAsUser 'CONTOSO\svcdash'
+-RunAsPassword (Read-Host 'pwd' -AsSecureString)`. The helper is idempotent —
+re-running updates the existing task.
+
+### `Register-SPSDscDashboardTask.ps1` parameters
+
+| Parameter | Purpose |
+| --- | --- |
+| `-IntervalMinutes` | Refresh cadence. **Minimum 30** (enforced). Align with the LCM interval. Default 30. |
+| `-NodeManifestPath` | Manifest folder passed to the dashboard (required). |
+| `-PullServerUrl` | Pull server OData URL. Default `https://localhost/PSDSCPullServer.svc`. |
+| `-OutputPath` | Where the task writes the HTML. Default `C:\inetpub\PSDSCPullServer\Dashboard.html`. |
+| `-DashboardScriptPath` | Path to `New-SPSDscDashboard.ps1`. Defaults next to this helper. |
+| `-TaskName` | Scheduled Task name. Default `SPSConfigKit-DscDashboard`. |
+| `-RunAsUser` / `-RunAsPassword` | Account for the task. Default `SYSTEM` (no password). Domain account needs a password. |
+| `-SkipCertificateCheck` | Forwarded to the dashboard for self-signed certs. |
+| `-RunNow` | Also start the task once immediately after registering. |
 
 ## Compliance rules
 

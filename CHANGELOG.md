@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `scripts/dashboard/New-SPSDscDashboard.ps1` (#6, #8)
+- `scripts/dashboard/New-SPSDscDashboard.ps1` (#6, #8, #9)
   - New DSC compliance dashboard generator. Discovers nodes from a shared manifest
     folder (`-NodeManifestPath`, populated by `CfgLcmPull.ps1`) and queries the
     pull server's keyed OData endpoint (`Nodes(AgentId='…')/Reports`) for each,
@@ -22,6 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/dashboard/README.md` and `scripts/dashboard/samples/`
   - Dashboard documentation plus a `mock-data.json` fixture and `New-MockData.ps1`
     so the page can be generated and reviewed without a live pull server.
+- `scripts/dashboard/Register-SPSDscDashboardTask.ps1` (#10)
+  - Idempotent, elevated helper that registers a Scheduled Task on the pull server
+    to regenerate the dashboard on a schedule and write it into the IIS-served
+    folder, so the dashboard stays current without any manual run. Enforces a
+    30-minute floor on `-IntervalMinutes` (nodes only report on their LCM
+    consistency interval, typically 60-120 min, so a shorter refresh adds load
+    without newer data) and documents aligning the cadence with the farm's LCM.
+    Runs as SYSTEM by default; supports a domain `-RunAsUser` for remote manifests.
 
 ### Changed
 

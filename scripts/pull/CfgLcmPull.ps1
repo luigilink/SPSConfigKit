@@ -221,6 +221,13 @@ if (-not $DisableLCM) {
         throw 'Pull mode requires -DSCRegistrationKey and -DSCPullServerUrl (pass them directly, or use -DomainDefaultsPath with an entry for this domain).'
     }
 
+    # Normalise the pull-server URL: a trailing slash on the registration
+    # ServerURL makes the LCM build malformed GetDscAction URLs (e.g.
+    # https://pull//​/PSDSCPullServer.svc/Nodes(...)), which the pull server
+    # rejects with 404 "AgentID not found". Strip any trailing slashes so a
+    # caller's '.../PSDSCPullServer.svc/' is harmless.
+    $DSCPullServerUrl = $DSCPullServerUrl.TrimEnd('/')
+
     if ($DSCPullServerUrl -notlike 'https://*') {
         Write-Warning ("Pull server URL '{0}' is not HTTPS. SPSConfigKit expects an HTTPS/443 pull server; otherwise registration and reports travel in clear text." -f $DSCPullServerUrl)
     }

@@ -1,9 +1,21 @@
 # DSC Compliance Dashboard
 
-`New-SPSDscDashboard.ps1` generates a **self-contained HTML compliance dashboard**
+`SPSDscDashboard.ps1` generates a **self-contained HTML compliance dashboard**
 for a classic Windows DSC pull server — in the spirit of Azure Automation State
 Configuration — by querying the pull server's OData reporting API and classifying
 every node as **Compliant / Non-Compliant / Failed / Unresponsive**.
+
+It is driven by `-Action` and configured by `SPSDscDashboard.psd1` (same folder):
+
+| `-Action` | Does |
+| --- | --- |
+| `Default` (default) | Generate `Dashboard.html` once. |
+| `Install` | Register/update a Scheduled Task that refreshes it on a schedule. |
+| `Uninstall` | Remove that Scheduled Task. |
+
+All settings live in `SPSDscDashboard.psd1` (URLs and paths only, no secrets, so
+it is tracked — edit it in place). Any value can still be overridden on the
+command line; an explicit parameter always wins.
 
 The output is a single `Dashboard.html` with **inline CSS + an SVG donut, no
 external framework and no CDN**, so it renders on an **offline** pull server (the
@@ -57,17 +69,26 @@ the nodes, then queries the supported keyed endpoint
 
 ## Usage
 
-```powershell
-# Against the live pull server (run on the pull server, localhost)
-.\New-SPSDscDashboard.ps1 `
-    -PullServerUrl     'https://localhost/PSDSCPullServer.svc' `
-    -NodeManifestPath  '\\pull\DscNodeManifest' `
-    -SkipCertificateCheck `
-    -OutputPath        'C:\inetpub\PSDSCPullServer\Dashboard.html'
+The script has just three parameters — `-Action`, `-InstallAccount`, `-InputFile`
+— everything else is configured in `SPSDscDashboard.psd1`. Edit the psd1 for your
+environment (pull URL, manifest path, output path, schedule), then:
 
-# Offline render from mock data (no pull server needed — for testing / demos)
-.\New-SPSDscDashboard.ps1 -MockDataPath .\samples\mock-data.json -OutputPath .\Dashboard.html
+```powershell
+# Generate once, using SPSDscDashboard.psd1 for all settings
+.\SPSDscDashboard.ps1
+
+# Install the auto-refresh Scheduled Task (settings from the psd1)
+.\SPSDscDashboard.ps1 -Action Install
+
+# Install it running under a domain account (needed for a remote manifest share)
+.\SPSDscDashboard.ps1 -Action Install -InstallAccount (Get-Credential 'CONTOSO\svcdash')
+
+# Remove the Scheduled Task
+.\SPSDscDashboard.ps1 -Action Uninstall
 ```
+
+For offline testing, set `MockDataPath` in the psd1 (or point `-InputFile` at a
+test copy) and run `.\SPSDscDashboard.ps1`.
 
 > The manifest folder is populated by the nodes when they register:
 > `.\CfgLcmPull.ps1 -DSCRegistrationKey … -DSCPullServerUrl … -NodeManifestPath '\\pull\DscNodeManifest' -UpdateNow`
@@ -77,13 +98,24 @@ the nodes, then queries the supported keyed endpoint
 
 | Parameter | Purpose |
 | --- | --- |
-| `-PullServerUrl` | Base URL of the OData service. Default `https://localhost/PSDSCPullServer.svc`. |
-| `-NodeManifestPath` | Shared folder of `<NodeName>.json` entries published by `CfgLcmPull.ps1`. Required for live rendering (how the dashboard discovers nodes). |
-| `-OutputPath` | HTML file to write. Default `Dashboard.html` next to the script. |
-| `-Title` | Dashboard heading. |
-| `-MaxReportsPerNode` | Cap on reports fetched per node before picking the latest (guards the unbounded ESENT `StatusReport` table). Default 50. |
-| `-MockDataPath` | Offline mode: render from a JSON file mirroring the OData shape (see `samples/`). |
-| `-SkipCertificateCheck` | Ignore TLS validation (self-signed lab certs). |
+| `-Action` | `Default` (generate), `Install` (register the refresh task), `Uninstall` (remove it). Default `Default`. |
+| `-InstallAccount` | (Install) Credential the Scheduled Task runs under. Omit for SYSTEM; supply a domain account for a remote manifest share. |
+| `-InputFile` | Path to the settings psd1. Defaults to `SPSDscDashboard.psd1` next to the script. |
+
+### Settings (`SPSDscDashboard.psd1`)
+
+| Key | Purpose |
+| --- | --- |
+| `PullServerUrl` | Base URL of the OData service. No trailing slash. |
+| `NodeManifestPath` | Shared folder of `<NodeName>.json` entries published by `CfgLcmPull.ps1`. How the dashboard discovers nodes. |
+| `OutputPath` | HTML file to write. Default the pull server IIS site root. |
+| `Title` | Dashboard heading. |
+| `MaxReportsPerNode` | Cap on reports fetched per node before picking the latest (guards the unbounded ESENT `StatusReport` table). |
+| `SkipCertificateCheck` | Ignore TLS validation (self-signed lab certs). |
+| `MockDataPath` | Offline mode: render from a JSON file mirroring the OData shape (see `samples/`). `$null` for live. |
+| `Schedule.IntervalMinutes` | Install refresh cadence. **Minimum 30** (enforced). |
+| `Schedule.TaskName` | Scheduled Task name. |
+| `Schedule.RunAfterInstall` | Start the task once immediately after Install. Default `$true`. |
 
 ## Serving the dashboard
 Put the generated `Dashboard.html` where it can be viewed:
@@ -105,53 +137,33 @@ when printing.
 ## Scheduling a periodic refresh
 
 The dashboard is a point-in-time snapshot with no server-side runtime, so
-"refreshing" it means regenerating the HTML. Use the bundled helper to install a
-Scheduled Task on the pull server that regenerates it into the IIS-served folder
-— the team then just browses `https://pull.contoso.com/Dashboard.html`:
+"refreshing" it means regenerating the HTML. `-Action Install` registers a
+Scheduled Task on the pull server that regenerates it (via `-Action Default`,
+same settings file) into the IIS-served folder — the team then just browses
+`https://pull.contoso.com/Dashboard.html`:
 
 ```powershell
-# Elevated, on the pull server. Refresh every 30 minutes as SYSTEM, run once now.
-.\Register-SPSDscDashboardTask.ps1 `
-    -NodeManifestPath 'F:\DscNodeManifest' `
-    -SkipCertificateCheck `
-    -RunNow
+# Elevated, on the pull server. Uses SPSDscDashboard.psd1 (Schedule block).
+.\SPSDscDashboard.ps1 -Action Install
 ```
 
 **Align the interval with your farm's LCM, and never go below 30 minutes.** DSC
 nodes only submit a new status report on their consistency interval
 (`ConfigurationModeFrequencyMins`, typically 60–120 minutes), so refreshing more
 often than every 30 minutes just adds load without surfacing any newer data. The
-helper enforces a 30-minute floor. Examples:
+script enforces a 30-minute floor. Set `Schedule.IntervalMinutes` in the psd1:
 
-| Farm LCM `ConfigurationModeFrequencyMins` | Suggested `-IntervalMinutes` |
+| Farm LCM `ConfigurationModeFrequencyMins` | Suggested `Schedule.IntervalMinutes` |
 | --- | --- |
 | 60 | 30 |
 | 120 | 60 |
 
-```powershell
-# Farm with a 120-minute LCM consistency interval
-.\Register-SPSDscDashboardTask.ps1 -NodeManifestPath 'F:\DscNodeManifest' -IntervalMinutes 60 -SkipCertificateCheck
-```
-
 The task runs as SYSTEM by default (fine for a local manifest folder and a
-localhost pull server). If the node manifest is on a **remote** share, run the
-task under a domain account that can read it: `-RunAsUser 'CONTOSO\svcdash'
--RunAsPassword (Read-Host 'pwd' -AsSecureString)`. The helper is idempotent —
-re-running updates the existing task.
-
-### `Register-SPSDscDashboardTask.ps1` parameters
-
-| Parameter | Purpose |
-| --- | --- |
-| `-IntervalMinutes` | Refresh cadence. **Minimum 30** (enforced). Align with the LCM interval. Default 30. |
-| `-NodeManifestPath` | Manifest folder passed to the dashboard (required). |
-| `-PullServerUrl` | Pull server OData URL. Default `https://localhost/PSDSCPullServer.svc`. |
-| `-OutputPath` | Where the task writes the HTML. Default `C:\inetpub\PSDSCPullServer\Dashboard.html`. |
-| `-DashboardScriptPath` | Path to `New-SPSDscDashboard.ps1`. Defaults next to this helper. |
-| `-TaskName` | Scheduled Task name. Default `SPSConfigKit-DscDashboard`. |
-| `-RunAsUser` / `-RunAsPassword` | Account for the task. Default `SYSTEM` (no password). Domain account needs a password. |
-| `-SkipCertificateCheck` | Forwarded to the dashboard for self-signed certs. |
-| `-RunNow` | Also start the task once immediately after registering. |
+localhost pull server). If the node manifest is on a **remote** share, run it
+under a domain account that can read it:
+`-Action Install -InstallAccount (Get-Credential 'CONTOSO\svcdash')`.
+`-Action Install` is idempotent — re-running updates the existing task; remove it
+with `-Action Uninstall`.
 
 ## Compliance rules
 
@@ -169,11 +181,12 @@ For each node, the **latest** compliance report (by `StartTime`, excluding
 
 `samples/New-MockData.ps1` regenerates `samples/mock-data.json` (5 nodes covering
 every state, with the same doubly-encoded `StatusData` the real API returns), so
-the renderer can be exercised without a live pull server:
+the renderer can be exercised without a live pull server. Set `MockDataPath` in
+`SPSDscDashboard.psd1` (or a test copy passed with `-InputFile`) to it, then:
 
 ```powershell
 .\samples\New-MockData.ps1
-.\New-SPSDscDashboard.ps1 -MockDataPath .\samples\mock-data.json -OutputPath .\Dashboard.html
+.\SPSDscDashboard.ps1
 ```
 
 ## Notes & limits (ESENT backend)

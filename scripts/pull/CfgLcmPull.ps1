@@ -55,7 +55,7 @@
     Optional folder (typically a UNC share the pull server and the dashboard can
     both read) where this script publishes a per-node <NodeName>.json entry after
     registering, containing NodeName, AgentId and ConfigurationNames. The
-    compliance dashboard (New-SPSDscDashboard.ps1) reads these entries to discover
+    compliance dashboard (SPSDscDashboard.ps1) reads these entries to discover
     which nodes exist, because the pull server's OData API cannot enumerate nodes
     (GET /Nodes returns HTTP 400) — it only answers keyed Nodes(AgentId='...')
     queries. May also be supplied per-domain via -DomainDefaultsPath

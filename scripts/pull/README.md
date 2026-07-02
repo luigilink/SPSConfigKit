@@ -78,10 +78,12 @@ This folder configures the two halves of a classic Windows DSC pull deployment:
    configuration and sends its first status report right away — which populates
    `Devices.edb` and the [compliance dashboard](../dashboard/README.md).
 
-6. **Watch compliance** — generate the dashboard on the pull server:
+6. **Watch compliance** — generate the dashboard on the pull server (settings in
+   `..\dashboard\SPSDscDashboard.psd1`), or install the auto-refresh task:
 
    ```powershell
-   ..\dashboard\New-SPSDscDashboard.ps1 -PullServerUrl 'https://localhost/PSDSCPullServer.svc' -SkipCertificateCheck -OutputPath .\Dashboard.html
+   ..\dashboard\SPSDscDashboard.ps1                     # generate once
+   ..\dashboard\SPSDscDashboard.ps1 -Action Install -RunNow   # scheduled refresh
    ```
 
 ## `Publish-SPSPullModules.ps1` parameters

@@ -17,7 +17,7 @@
         RegistrationKey = '00000000-0000-0000-0000-000000000000'
         PullServerUrl   = 'https://pull.contoso.com/PSDSCPullServer.svc'
         # Optional: shared folder where each node publishes its AgentId for the
-        # compliance dashboard (New-SPSDscDashboard.ps1 -NodeManifestPath).
+        # compliance dashboard (SPSDscDashboard.ps1 -Action Default).
         NodeManifestPath = '\\pull.contoso.com\DscNodeManifest'
     }
 

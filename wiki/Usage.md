@@ -169,7 +169,7 @@ and poll later with `Get-DscConfigurationStatus`.
    succeeds out of the box.
 5. The LCM downloads the MOF on its configured interval (default 30 min)
    and applies it, then reports status back &mdash; which you can watch with the
-   [compliance dashboard](./Home) (`scripts/dashboard/New-SPSDscDashboard.ps1`).
+   [compliance dashboard](./Home) (`scripts/dashboard/SPSDscDashboard.ps1`).
 
 > The reference `scripts/pull/CfgAppPull.ps1` is provided so the sample
 > lab can stand up a pull server quickly. **Do not deploy it as-is in

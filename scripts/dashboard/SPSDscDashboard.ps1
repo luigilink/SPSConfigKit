@@ -18,15 +18,26 @@
 <#
   .SYNOPSIS
   Generates a self-contained HTML compliance dashboard for a classic Windows DSC
-  pull server, in the style of Azure Automation State Configuration.
+  pull server, and installs/removes a Scheduled Task that keeps it refreshed.
 
   .DESCRIPTION
-  Queries the pull server's OData reporting API (PSDSCPullServer.svc) for every
-  registered node and its latest status report, classifies each node as
-  Compliant / NonCompliant / Failed / Unresponsive, and renders a single
-  self-contained Dashboard.html (inline CSS + SVG donut, no external framework,
-  no CDN — works on an offline pull server). Intended to run on the pull server
-  itself (localhost) as a scheduled task.
+  Driven by -Action, backed by a settings file (SPSDscDashboard.psd1):
+
+    * Default   - Generate Dashboard.html once. Queries the pull server's OData
+                  reporting API (PSDSCPullServer.svc) for every registered node
+                  and its latest status report, classifies each node as
+                  Compliant / NonCompliant / Failed / Unresponsive, and renders a
+                  single self-contained HTML page (inline CSS + SVG donut, no
+                  external framework, no CDN — works on an offline pull server).
+    * Install   - Register (or update) a Scheduled Task on the pull server that
+                  runs this script with -Action Default on a schedule, writing the
+                  HTML into the IIS-served folder so it stays current with no
+                  manual run.
+    * Uninstall - Remove that Scheduled Task.
+
+  All settings come from SPSDscDashboard.psd1 next to this script (override the
+  path with -InputFile). The only runtime inputs are -Action and, for a scheduled
+  task that must run under a domain account, -InstallAccount.
 
   Data source rationale: the classic xDscWebService pull server's OData API
   cannot enumerate nodes — GET /Nodes returns HTTP 400 ("resourceKeys is
@@ -37,81 +48,94 @@
   then queries the supported keyed endpoint Nodes(AgentId='...')/Reports for
   each. See scripts/dashboard/README.md.
 
-  .PARAMETER PullServerUrl
-  Base URL of the pull server OData service, e.g.
-  'https://localhost/PSDSCPullServer.svc'. Ignored when -MockDataPath is used.
+  .PARAMETER Action
+  Default (generate the HTML), Install (register the refresh Scheduled Task) or
+  Uninstall (remove it). Default 'Default'.
 
-  .PARAMETER OutputPath
-  Full path of the HTML file to write. Defaults to .\Dashboard.html next to the
-  script.
+  .PARAMETER InstallAccount
+  (Install) Credential the Scheduled Task runs under. Omit to run as SYSTEM
+  (fine for a local manifest folder and a localhost pull server). Supply a domain
+  account when the node manifest is on a remote share the machine account cannot
+  read.
 
-  .PARAMETER Title
-  Dashboard heading. Defaults to 'SharePoint Farm — DSC Compliance'.
-
-  .PARAMETER MaxReportsPerNode
-  Upper bound on reports fetched per node before selecting the latest (protects
-  against the unbounded StatusReport table on ESENT). Default 50.
-
-  .PARAMETER MockDataPath
-  Offline/testing mode: path to a JSON file mirroring the OData shape
-  (see scripts/dashboard/samples/mock-data.json). When supplied, no HTTP call is
-  made — the dashboard is rendered from the mock file. Lets the renderer be tested
-  without a live pull server.
-
-  .PARAMETER NodeManifestPath
-  Folder (typically the shared folder passed to CfgLcmPull.ps1 -NodeManifestPath)
-  holding one <NodeName>.json per registered node with its AgentId. Required for
-  live rendering (unless -MockDataPath is used); it is how the dashboard discovers
-  which nodes exist, since the pull server OData API cannot list them.
-
-  .PARAMETER SkipCertificateCheck
-  Ignore TLS certificate validation when calling the pull server (self-signed lab
-  certs). PowerShell 5.1 compatible.
+  .PARAMETER InputFile
+  Path to the settings .psd1. Defaults to SPSDscDashboard.psd1 next to this script.
+  All other settings (PullServerUrl, NodeManifestPath, OutputPath, Title,
+  MaxReportsPerNode, SkipCertificateCheck, MockDataPath and the Schedule block)
+  live in that file.
 
   .EXAMPLE
-  .\New-SPSDscDashboard.ps1 -PullServerUrl 'https://localhost/PSDSCPullServer.svc' -NodeManifestPath '\\pull\DscNodeManifest' -SkipCertificateCheck -OutputPath 'C:\inetpub\PSDSCPullServer\Dashboard.html'
+  # Generate once, using SPSDscDashboard.psd1 for all settings
+  .\SPSDscDashboard.ps1
 
   .EXAMPLE
-  .\New-SPSDscDashboard.ps1 -MockDataPath .\samples\mock-data.json -OutputPath .\Dashboard.html
+  # Install the refresh Scheduled Task (settings from the psd1)
+  .\SPSDscDashboard.ps1 -Action Install
+
+  .EXAMPLE
+  # Install the task running under a domain account (remote manifest share)
+  .\SPSDscDashboard.ps1 -Action Install -InstallAccount (Get-Credential 'CONTOSO\svcdash')
 
   .NOTES
   Project : SPSConfigKit
-  Requires: PowerShell 5.1. Reporting API sourced from
-  https://learn.microsoft.com/en-us/powershell/dsc/pull-server/reportserver
+  Requires: PowerShell 5.1. Install/Uninstall require an elevated session.
+  Reporting API: https://learn.microsoft.com/en-us/powershell/dsc/pull-server/reportserver
 #>
 
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess = $true)]
 param(
-  [Parameter()]
+  [Parameter(Position = 0)]
+  [ValidateSet('Default', 'Install', 'Uninstall', IgnoreCase = $true)]
   [System.String]
-  $PullServerUrl = 'https://localhost/PSDSCPullServer.svc',
+  $Action = 'Default',
 
-  [Parameter()]
+  [Parameter(Position = 1)]
+  [System.Management.Automation.PSCredential]
+  $InstallAccount,
+
+  [Parameter(Position = 2)]
   [System.String]
-  $OutputPath,
-
-  [Parameter()]
-  [System.String]
-  $Title = 'SharePoint Farm — DSC Compliance',
-
-  [Parameter()]
-  [System.Int32]
-  $MaxReportsPerNode = 50,
-
-  [Parameter()]
-  [System.String]
-  $MockDataPath,
-
-  [Parameter()]
-  [System.String]
-  $NodeManifestPath,
-
-  [Parameter()]
-  [switch]
-  $SkipCertificateCheck
+  $InputFile
 )
 
 $ErrorActionPreference = 'Stop'
+
+# ---------------------------------------------------------------------------
+# Settings: everything comes from SPSDscDashboard.psd1 (no per-value parameters,
+# same convention as SPSWakeUp / SPSUserSync). -InputFile points at another copy;
+# -InstallAccount (a PSCredential) is the only runtime input, used as the
+# Scheduled Task principal for -Action Install.
+# ---------------------------------------------------------------------------
+$scriptBase = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+if ([string]::IsNullOrWhiteSpace($InputFile)) {
+  $InputFile = Join-Path -Path $scriptBase -ChildPath 'SPSDscDashboard.psd1'
+}
+if (-not (Test-Path -LiteralPath $InputFile)) {
+  throw ("Settings file not found at '{0}'. It ships with the kit; pass -InputFile to point at another copy." -f $InputFile)
+}
+$settings = Import-PowerShellDataFile -Path $InputFile
+$schedule = if ($settings.Schedule) { $settings.Schedule } else { @{} }
+
+function Get-SettingValue {
+  param($Value, $Default)
+  if ($null -ne $Value) { return $Value }
+  return $Default
+}
+
+$PullServerUrl        = Get-SettingValue $settings.PullServerUrl     'https://localhost/PSDSCPullServer.svc'
+$OutputPath           = Get-SettingValue $settings.OutputPath        (Join-Path -Path $scriptBase -ChildPath 'Dashboard.html')
+$Title                = Get-SettingValue $settings.Title             'SharePoint Farm — DSC Compliance'
+$MaxReportsPerNode    = Get-SettingValue $settings.MaxReportsPerNode 50
+$NodeManifestPath     = $settings.NodeManifestPath
+$MockDataPath         = $settings.MockDataPath
+$SkipCertificateCheck = [bool]$settings.SkipCertificateCheck
+$IntervalMinutes      = Get-SettingValue $schedule.IntervalMinutes   30
+$TaskName             = Get-SettingValue $schedule.TaskName          'SPSConfigKit-DscDashboard'
+$RunAfterInstall      = if ($null -ne $schedule.RunAfterInstall) { [bool]$schedule.RunAfterInstall } else { $true }
+
+if ($IntervalMinutes -lt 30) {
+  throw ("Schedule.IntervalMinutes is {0}; the minimum is 30. Nodes only report on their LCM consistency interval (typically 60-120 min), so a shorter refresh adds load without newer data." -f $IntervalMinutes)
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -692,7 +716,7 @@ $rowsHtml
 $detailsHtml
 
   <footer class="page">
-    <span>Generated by SPSConfigKit · New-SPSDscDashboard.ps1</span>
+    <span>Generated by SPSConfigKit · SPSDscDashboard.ps1</span>
     <span class="mono">Source: PSDSCPullServer.svc (OData)</span>
   </footer>
   <script>
@@ -729,15 +753,10 @@ $detailsHtml
 }
 
 # ---------------------------------------------------------------------------
-# Main
+# Actions
 # ---------------------------------------------------------------------------
 
-try {
-  if ([string]::IsNullOrWhiteSpace($OutputPath)) {
-    $scriptBase = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
-    $OutputPath = Join-Path -Path $scriptBase -ChildPath 'Dashboard.html'
-  }
-
+function Invoke-DashboardGenerate {
   $raw = Get-DscNodeData
   $nodes = @($raw.Nodes)
   $reportsMap = $raw.Reports
@@ -760,7 +779,106 @@ try {
 
   Write-Host ("[{0}] Dashboard written: {1} ({2} node(s))" -f (Get-Date -Format 'o'), $OutputPath, @($compliance).Count)
 }
+
+function Assert-Elevated {
+  $isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  if (-not $isAdmin) {
+    throw ("Action '{0}' manages a Scheduled Task and must run in an elevated session." -f $Action)
+  }
+}
+
+function Invoke-DashboardInstall {
+  Assert-Elevated
+
+  $selfPath = $PSCommandPath
+  if ([string]::IsNullOrWhiteSpace($selfPath)) { $selfPath = Join-Path -Path $scriptBase -ChildPath 'SPSDscDashboard.ps1' }
+
+  Write-Host '-----------------------------------------------'
+  Write-Host '| SPSConfigKit - SPSDscDashboard (Install)'
+  Write-Host ("| Task name       {0}" -f $TaskName)
+  Write-Host ("| Interval        {0} minute(s)" -f $IntervalMinutes)
+  Write-Host ("| Output          {0}" -f $OutputPath)
+  Write-Host ("| Run as          {0}" -f $(if ($InstallAccount) { $InstallAccount.UserName } else { 'SYSTEM' }))
+  Write-Host '-----------------------------------------------'
+
+  if ($IntervalMinutes -lt 60) {
+    Write-Host ("[i] Refresh interval is {0} min. This is the practical floor — DSC nodes only report on their LCM consistency interval (typically 60-120 min), so a shorter refresh adds load without newer data." -f $IntervalMinutes)
+  }
+
+  # The task re-invokes THIS script with -Action Default; settings come from the
+  # same SPSDscDashboard.psd1, so the task stays in sync with the config file.
+  $scriptArgs = @(
+    '-NoProfile'
+    '-ExecutionPolicy'; 'Bypass'
+    '-File'; ('"{0}"' -f $selfPath)
+    '-Action'; 'Default'
+    '-InputFile'; ('"{0}"' -f $InputFile)
+  )
+  $argumentString = $scriptArgs -join ' '
+
+  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $argumentString
+  $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+    -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes)
+  $settingsSet = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd `
+    -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 15)
+
+  $registerArgs = @{
+    TaskName    = $TaskName
+    Action      = $action
+    Trigger     = $trigger
+    Settings    = $settingsSet
+    Description = 'SPSConfigKit — regenerates the DSC compliance dashboard (SPSDscDashboard.ps1 -Action Default) on a schedule.'
+    Force       = $true
+  }
+  if ($InstallAccount) {
+    # Run under the supplied domain account (needed when the node manifest is on a
+    # remote share the machine account cannot read).
+    $registerArgs.User = $InstallAccount.UserName
+    $registerArgs.Password = $InstallAccount.GetNetworkCredential().Password
+    $registerArgs.RunLevel = 'Highest'
+  }
+  else {
+    # Default: SYSTEM. Fine for a local manifest folder and a localhost pull server.
+    $registerArgs.Principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+  }
+
+  $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  $verb = if ($existing) { 'Updating' } else { 'Registering' }
+  if ($PSCmdlet.ShouldProcess($TaskName, "$verb scheduled task")) {
+    Register-ScheduledTask @registerArgs | Out-Null
+    Write-Host ("[+] Scheduled task '{0}' registered; next run within {1} minute(s)." -f $TaskName, $IntervalMinutes)
+    if ($RunAfterInstall) {
+      Start-ScheduledTask -TaskName $TaskName
+      Write-Host ("[+] Task started; '{0}' will be written shortly." -f $OutputPath)
+    }
+  }
+}
+
+function Invoke-DashboardUninstall {
+  Assert-Elevated
+  $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  if (-not $existing) {
+    Write-Host ("[=] Scheduled task '{0}' not found. Nothing to do." -f $TaskName)
+    return
+  }
+  if ($PSCmdlet.ShouldProcess($TaskName, 'Unregister scheduled task')) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Write-Host ("[+] Scheduled task '{0}' removed." -f $TaskName)
+  }
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+try {
+  switch ($Action) {
+    'Install'   { Invoke-DashboardInstall }
+    'Uninstall' { Invoke-DashboardUninstall }
+    default     { Invoke-DashboardGenerate }
+  }
+}
 catch {
-  Write-Error -Message ("Dashboard generation failed at {0}:{1} - {2}" -f $_.InvocationInfo.ScriptName, $_.InvocationInfo.ScriptLineNumber, $_.Exception.Message) -ErrorAction Continue
+  Write-Error -Message ("SPSDscDashboard '{0}' failed at {1}:{2} - {3}" -f $Action, $_.InvocationInfo.ScriptName, $_.InvocationInfo.ScriptLineNumber, $_.Exception.Message) -ErrorAction Continue
   throw
 }

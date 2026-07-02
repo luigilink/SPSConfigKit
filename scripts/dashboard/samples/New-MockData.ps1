@@ -1,6 +1,6 @@
 ﻿<#
   Generates samples/mock-data.json mirroring the pull-server OData shape (including
-  the doubly-encoded StatusData string), so New-SPSDscDashboard.ps1 can be exercised
+  the doubly-encoded StatusData string), so SPSDscDashboard.ps1 can be exercised
   offline without a live pull server.
 #>
 [CmdletBinding()]

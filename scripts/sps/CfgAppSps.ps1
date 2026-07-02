@@ -322,7 +322,7 @@ try {
         MatchSource     = $true
         Force           = $true
         Checksum        = 'modifiedDate'
-        Credential      = $ADSETUP
+        Credential      = $SETUP
       }
       #Install the SharePoint prerequisites
       if ($Node.SPVersion -eq 'SE') {
@@ -1318,7 +1318,7 @@ try {
         DestinationPath = $oosPaths.Destination
         Ensure          = 'Present'
         Recurse         = $true
-        Credential      = $ADSETUP
+        Credential      = $SETUP
         MatchSource     = $true
       }
       Log APPLICATION_OOSGetSources_Completed {

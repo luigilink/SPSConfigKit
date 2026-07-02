@@ -206,7 +206,7 @@ try {
         MatchSource     = $true
         Force           = $true
         Checksum        = 'modifiedDate'
-        Credential      = $PULLSETUP
+        Credential      = $SETUP
       }
       #Initialize the SQL Server Instance variable
       $sqlSPInstance = $Node.SQLInstanceName

@@ -146,6 +146,11 @@ try {
       LocalConfigurationManager {
         ConfigurationMode  = 'ApplyOnly'
         RebootNodeIfNeeded = $true
+        # Certificate the LCM uses to decrypt the encrypted credentials in this
+        # node's MOF. $Node.Thumbprint is injected into the wildcard block by
+        # Initialize-DscEncryption.ps1; without it the LCM cannot process an
+        # encrypted MOF ("LCM is not configured with a certificate").
+        CertificateID      = $Node.Thumbprint
       }
       #Stop unnecessary Windows Services
       Service SYSTEM_SvcSpoolerManualStopped {

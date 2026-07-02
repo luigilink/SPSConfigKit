@@ -120,10 +120,32 @@ test copy) and run `.\SPSDscDashboard.ps1`.
 ## Serving the dashboard
 Put the generated `Dashboard.html` where it can be viewed:
 
-- **On the pull server's IIS site** (already present): write it into the pull
-  server's physical path (e.g. `C:\inetpub\PSDSCPullServer\Dashboard.html`) and
-  browse `https://pull.contoso.com/Dashboard.html`, **or**
-- **On a file share** the team can open directly.
+- **On the pull server's IIS site (zero-config, recommended)** — write it into the
+  physical path of the `PSDSCPullServer` site, next to `PSDSCPullServer.svc`. IIS
+  then serves it at `https://<pull>/Dashboard.html` **with no IIS configuration
+  change** (this is the default `OutputPath`). Confirm the site's real physical
+  path first:
+
+  ```powershell
+  Import-Module WebAdministration
+  (Get-Website -Name 'PSDSCPullServer').physicalPath
+  ```
+
+  If a request for the `.html` returns **HTTP 404.3** the IIS *Static Content*
+  role feature is missing (the pull server doesn't strictly require it) — add it
+  once:
+
+  ```powershell
+  Install-WindowsFeature Web-Static-Content
+  ```
+
+- **On a file share** the team can open directly (e.g. `\\fs\dsc$\Dashboard.html`).
+
+> ⚠️ **Security.** A file at the pull server site root is served **anonymously** —
+> anyone who can reach the pull server sees the dashboard (node names, config
+> names, drift). That's fine for a lab; for production, point `OutputPath` at a
+> protected share instead, or add an authorization / IP restriction on the file
+> in IIS.
 
 ## Light / dark theme
 

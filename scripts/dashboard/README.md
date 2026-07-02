@@ -115,6 +115,7 @@ test copy) and run `.\SPSDscDashboard.ps1`.
 | `MockDataPath` | Offline mode: render from a JSON file mirroring the OData shape (see `samples/`). `$null` for live. |
 | `Schedule.IntervalMinutes` | Install refresh cadence. **Minimum 30** (enforced). |
 | `Schedule.TaskName` | Scheduled Task name. |
+| `Schedule.TaskPath` | Task Scheduler folder for the task. Default `\SharePoint\` (grouped with the other SPS* tasks). |
 | `Schedule.RunAfterInstall` | Start the task once immediately after Install. Default `$true`. |
 
 ## Serving the dashboard

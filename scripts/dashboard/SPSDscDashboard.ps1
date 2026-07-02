@@ -131,6 +131,7 @@ $MockDataPath         = $settings.MockDataPath
 $SkipCertificateCheck = [bool]$settings.SkipCertificateCheck
 $IntervalMinutes      = Get-SettingValue $schedule.IntervalMinutes   30
 $TaskName             = Get-SettingValue $schedule.TaskName          'SPSConfigKit-DscDashboard'
+$TaskPath             = Get-SettingValue $schedule.TaskPath          '\SharePoint\'
 $RunAfterInstall      = if ($null -ne $schedule.RunAfterInstall) { [bool]$schedule.RunAfterInstall } else { $true }
 
 if ($IntervalMinutes -lt 30) {
@@ -803,6 +804,7 @@ function Invoke-DashboardInstall {
 
   Write-Host '-----------------------------------------------'
   Write-Host '| SPSConfigKit - SPSDscDashboard (Install)'
+  Write-Host ("| Task path       {0}" -f $TaskPath)
   Write-Host ("| Task name       {0}" -f $TaskName)
   Write-Host ("| Interval        {0} minute(s)" -f $IntervalMinutes)
   Write-Host ("| Output          {0}" -f $OutputPath)
@@ -832,6 +834,7 @@ function Invoke-DashboardInstall {
 
   $registerArgs = @{
     TaskName    = $TaskName
+    TaskPath    = $TaskPath
     Action      = $action
     Trigger     = $trigger
     Settings    = $settingsSet
@@ -850,13 +853,13 @@ function Invoke-DashboardInstall {
     $registerArgs.Principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
   }
 
-  $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  $existing = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
   $verb = if ($existing) { 'Updating' } else { 'Registering' }
-  if ($PSCmdlet.ShouldProcess($TaskName, "$verb scheduled task")) {
+  if ($PSCmdlet.ShouldProcess(("{0}{1}" -f $TaskPath, $TaskName), "$verb scheduled task")) {
     Register-ScheduledTask @registerArgs | Out-Null
-    Write-Host ("[+] Scheduled task '{0}' registered; next run within {1} minute(s)." -f $TaskName, $IntervalMinutes)
+    Write-Host ("[+] Scheduled task '{0}{1}' registered; next run within {2} minute(s)." -f $TaskPath, $TaskName, $IntervalMinutes)
     if ($RunAfterInstall) {
-      Start-ScheduledTask -TaskName $TaskName
+      Start-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath
       Write-Host ("[+] Task started; '{0}' will be written shortly." -f $OutputPath)
     }
   }
@@ -866,14 +869,14 @@ function Invoke-DashboardUninstall {
   [CmdletBinding(SupportsShouldProcess = $true)]
   param()
   Assert-Elevated
-  $existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+  $existing = Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -ErrorAction SilentlyContinue
   if (-not $existing) {
-    Write-Host ("[=] Scheduled task '{0}' not found. Nothing to do." -f $TaskName)
+    Write-Host ("[=] Scheduled task '{0}{1}' not found. Nothing to do." -f $TaskPath, $TaskName)
     return
   }
-  if ($PSCmdlet.ShouldProcess($TaskName, 'Unregister scheduled task')) {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host ("[+] Scheduled task '{0}' removed." -f $TaskName)
+  if ($PSCmdlet.ShouldProcess(("{0}{1}" -f $TaskPath, $TaskName), 'Unregister scheduled task')) {
+    Unregister-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath -Confirm:$false
+    Write-Host ("[+] Scheduled task '{0}{1}' removed." -f $TaskPath, $TaskName)
   }
 }
 

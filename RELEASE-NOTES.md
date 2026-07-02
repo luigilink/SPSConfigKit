@@ -24,7 +24,9 @@
     manifests. (Consolidates the earlier `New-SPSDscDashboard.ps1` and
     `Register-SPSDscDashboardTask.ps1` into one `-Action`-driven script (#11).)
     The script exposes only `-Action`, `-InstallAccount` and `-InputFile`; every
-    other setting lives in the tracked `SPSDscDashboard.psd1`.
+    other setting lives in the tracked `SPSDscDashboard.psd1`. The refresh task is
+    created in the `\SharePoint\` Task Scheduler folder (configurable via
+    `Schedule.TaskPath`), alongside the other SPS* project tasks.
 - `scripts/dashboard/README.md` and `scripts/dashboard/samples/`
   - Dashboard documentation plus a `mock-data.json` fixture and `New-MockData.ps1`
     so the page can be generated and reviewed without a live pull server.

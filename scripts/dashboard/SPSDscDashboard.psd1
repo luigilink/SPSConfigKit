@@ -47,6 +47,10 @@
         # Scheduled Task name.
         TaskName        = 'SPSConfigKit-DscDashboard'
 
+        # Task Scheduler folder to create the task in, keeping it alongside the
+        # other SPS* project tasks (SPSWakeUp, SPSWeather…) instead of the root.
+        TaskPath        = '\SharePoint\'
+
         # Start the task once immediately after -Action Install (produces a first
         # dashboard without waiting for the first trigger).
         RunAfterInstall = $true

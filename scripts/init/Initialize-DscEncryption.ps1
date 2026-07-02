@@ -54,7 +54,9 @@
 .PARAMETER Force
     Remove any existing cert with the same Subject and create a fresh one.
     Existing CertificateFile / Thumbprint lines in patched psd1 files are
-    refreshed to the new thumbprint.
+    refreshed to the new thumbprint. Requires -PfxPassword so the new private
+    key is exported to a matching .pfx; the script refuses -Force without it to
+    avoid leaving a stale .pfx that nodes cannot decrypt with.
 
 .EXAMPLE
     .\Initialize-DscEncryption.ps1
@@ -103,6 +105,15 @@ if ($PSVersionTable.PSEdition -eq 'Core' -and $PSVersionTable.OS -notlike '*Wind
 
 if (-not $NodeCertImportPath) {
     $NodeCertImportPath = Join-Path -Path $SourcePath -ChildPath $CertFileName
+}
+
+# Guard-rail: rotating the certificate (-Force) without exporting a matching
+# .pfx would rewrite the public .cer (and patch the psd1 thumbprint) while
+# leaving the previous, now-mismatched .pfx on the share. Nodes would then
+# encrypt/compile against the new key but never receive its private key, so the
+# LCM fails at apply time with "Decryption failed". Refuse the footgun early.
+if ($Force -and -not $PfxPassword) {
+    throw ("-Force rotates the '{0}' certificate but -PfxPassword was not supplied, so the new private key (.pfx) cannot be exported. This would leave a stale .pfx on the share and every node unable to decrypt its MOF. Re-run with -PfxPassword to export the matching .pfx." -f $CertSubject)
 }
 
 $pfxFileName = [System.IO.Path]::ChangeExtension($CertFileName, 'pfx')
@@ -179,6 +190,35 @@ if ($PfxPassword) {
 }
 else {
     Write-Host "[i] -PfxPassword not supplied: .pfx export skipped."
+}
+
+# ---------------------------------------------------------------------------
+# 3b) Validate that the .cer, the .pfx and the live cert all share one thumbprint
+# ---------------------------------------------------------------------------
+# The whole scheme relies on a single key pair: the .cer encrypts the MOF, the
+# matching .pfx (same thumbprint) decrypts it on every node, and the psd1 is
+# patched with that thumbprint. Verify they are aligned so a drifted .pfx can
+# never slip through unnoticed (the root cause of "Decryption failed" seen when
+# a stale .pfx lingered next to a freshly rotated .cer).
+
+if (Test-Path -Path $cerOutPath) {
+    $cerThumb = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $cerOutPath).Thumbprint
+    if ($cerThumb -ne $thumb) {
+        throw ("Public certificate '{0}' has thumbprint {1} but the active certificate is {2}. Remove the stale .cer and re-run." -f $cerOutPath, $cerThumb, $thumb)
+    }
+}
+
+if (Test-Path -Path $pfxOutPath) {
+    if ($PfxPassword) {
+        $pfxThumb = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $pfxOutPath, $PfxPassword).Thumbprint
+        if ($pfxThumb -ne $thumb) {
+            throw ("Private key '{0}' has thumbprint {1} but the active certificate is {2}. The .cer and .pfx on the share are not the same key pair; nodes would fail to decrypt. Re-export the .pfx from the active certificate." -f $pfxOutPath, $pfxThumb, $thumb)
+        }
+        Write-Host "[+] Verified .cer / .pfx / certificate thumbprints all match ($thumb)."
+    }
+    else {
+        Write-Warning ("A .pfx already exists at '{0}' but -PfxPassword was not supplied, so its thumbprint could not be verified against the active certificate ({1}). If it is stale, nodes will fail to decrypt. Re-run with -PfxPassword to refresh it." -f $pfxOutPath, $thumb)
+    }
 }
 
 # ---------------------------------------------------------------------------

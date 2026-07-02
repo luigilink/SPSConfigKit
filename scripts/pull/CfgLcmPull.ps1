@@ -59,6 +59,16 @@
     to spread load when many nodes register at the same time. Defaults to 30.
     Set to 0 to disable.
 
+    .PARAMETER CertificateThumbprint
+    Thumbprint (40 hex chars) of the document-encryption certificate the LCM uses
+    to decrypt the credentials in the MOF it pulls. When omitted it is resolved
+    automatically from the newest CN=DSC Encryption certificate that has a private
+    key in Cert:\LocalMachine\My (imported by Initialize-DscNode.ps1).
+
+    .PARAMETER CertificateSubject
+    Subject of the document-encryption certificate to look up when
+    -CertificateThumbprint is not supplied. Defaults to 'CN=DSC Encryption'.
+
     .EXAMPLE
     .\CfgLcmPull.ps1 -DSCRegistrationKey 'bde9f881-ab0d-40e3-97b4-4e92be8852d6' `
                      -DSCPullServerUrl   'https://pull.contoso.com/PSDSCPullServer.svc'
@@ -93,6 +103,16 @@ param(
     [ValidateSet('ApplyOnly', 'ApplyAndMonitor', 'ApplyAndAutoCorrect')]
     [System.String]
     $ConfigurationMode = 'ApplyAndMonitor',
+
+    [Parameter()]
+    [ValidatePattern('^[0-9A-Fa-f]{40}$')]
+    [System.String]
+    $CertificateThumbprint,
+
+    [Parameter()]
+    [ValidateNotNullOrEmpty()]
+    [System.String]
+    $CertificateSubject = 'CN=DSC Encryption',
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
@@ -170,7 +190,11 @@ Configuration LCMConfig
         [Parameter()]
         [ValidateSet('None', 'ForceModuleImport', 'ResourceScriptBreakAll', 'All')]
         [System.String]
-        $DebugMode = 'None'
+        $DebugMode = 'None',
+
+        [Parameter()]
+        [System.String]
+        $CertificateId
     )
 
     Node $NodeName {
@@ -188,6 +212,12 @@ Configuration LCMConfig
             RebootNodeIfNeeded             = $true
             ActionAfterReboot              = 'ContinueConfiguration'
             DebugMode                      = $DebugMode
+            # Certificate the LCM uses to decrypt the encrypted credentials in the
+            # MOF it pulls from the server. Resolved from the local store (the
+            # CN=DSC Encryption cert imported by Initialize-DscNode.ps1) or from
+            # -CertificateThumbprint. Empty in Disabled/Push mode where no
+            # encrypted pull document is applied.
+            CertificateID                  = $CertificateId
         }
         if ($RefreshMode -eq 'Pull') {
             ConfigurationRepositoryWeb PullSrv {
@@ -265,6 +295,27 @@ $LCMArgs = @{
     OutputPath        = $WorkingPath
     DebugMode         = $LcmDebugMode
 }
+
+# Resolve the document-encryption certificate the LCM will use to decrypt the
+# credentials in the MOF it pulls. Prefer the explicit -CertificateThumbprint;
+# otherwise pick the newest CN=DSC Encryption certificate that has a private key
+# in the local machine store (imported by Initialize-DscNode.ps1).
+$resolvedCertId = $null
+if ($CertificateThumbprint) {
+    $resolvedCertId = $CertificateThumbprint
+    Write-Output ("Using LCM decryption certificate from -CertificateThumbprint: {0}" -f $resolvedCertId)
+}
+else {
+    $encryptionCert = Get-ChildItem -Path Cert:\LocalMachine\My -ErrorAction SilentlyContinue |
+        Where-Object { $_.Subject -eq $CertificateSubject -and $_.HasPrivateKey } |
+        Sort-Object NotAfter -Descending |
+        Select-Object -First 1
+    if ($encryptionCert) {
+        $resolvedCertId = $encryptionCert.Thumbprint
+        Write-Output ("Resolved LCM decryption certificate '{0}' (thumbprint {1})" -f $CertificateSubject, $resolvedCertId)
+    }
+}
+
 if ($DisableLCM) {
     $LCMArgs.RefreshMode = 'Push'
 }
@@ -273,6 +324,13 @@ else {
     $LCMArgs.ConfigurationNames = $ConfigurationNames
     $LCMArgs.RegistrationKey    = $DSCRegistrationKey
     $LCMArgs.PullServerUrl      = $DSCPullServerUrl
+
+    if ($resolvedCertId) {
+        $LCMArgs.CertificateId = $resolvedCertId
+    }
+    else {
+        Write-Warning ("No '{0}' certificate with a private key was found in the local machine store and -CertificateThumbprint was not supplied. The LCM will be unable to decrypt encrypted MOFs pulled from the server. Run Initialize-DscNode.ps1 to import the .pfx first." -f $CertificateSubject)
+    }
 
     Write-Output ("LCM will register with '{0}' using configuration names '{1}'" -f `
         $LCMArgs.PullServerUrl, ($LCMArgs.ConfigurationNames -join ','))

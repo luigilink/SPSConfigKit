@@ -143,13 +143,6 @@ function ConvertFrom-DscStatusData {
   }
 }
 
-function Get-DscBool {
-  # DSC serialises booleans as the strings "True"/"False".
-  param($Value)
-  if ($Value -is [bool]) { return $Value }
-  return ([string]$Value -eq 'True')
-}
-
 function Invoke-DscPullApi {
   param([System.String] $Uri)
   $headers = @{ Accept = 'application/json'; ProtocolVersion = '2.0' }
@@ -275,23 +268,46 @@ function ConvertTo-NodeCompliance {
     $sd = ConvertFrom-DscStatusData -StatusData $latest.StatusData
 
     if ($sd) {
-      $inList = @($sd.ResourcesInDesiredState)
-      $notList = @($sd.ResourcesNotInDesiredState)
-      $inCount = $inList.Count
-      $notCount = $notList.Count
+      $inList = @($sd.ResourcesInDesiredState) | Where-Object { $_ }
+      $notList = @($sd.ResourcesNotInDesiredState) | Where-Object { $_ }
       $duration = $sd.DurationInSeconds
 
-      foreach ($r in ($inList + $notList)) {
-        if (-not $r) { continue }
+      # Tag each resource's compliance by the LIST it came from — that is the
+      # authoritative signal. The per-resource InDesiredState property is not
+      # reliable in pull consistency reports (a drifted resource can carry a
+      # stale True), which previously hid the drifted resource behind an "In
+      # state" pill. Drifted resources are added first and win any ResourceId
+      # collision so a resource present in both lists renders as drifted.
+      $seen = @{}
+      foreach ($r in $notList) {
+        $rid = [string]$r.ResourceId
         $resources += [pscustomobject]@{
-          ResourceId        = [string]$r.ResourceId
+          ResourceId        = $rid
           ModuleName        = [string]$r.ModuleName
           ModuleVersion     = [string]$r.ModuleVersion
-          InDesiredState    = (Get-DscBool $r.InDesiredState)
+          InDesiredState    = $false
+          DurationInSeconds = [string]$r.DurationInSeconds
+          Error             = [string]$r.Error
+        }
+        if ($rid) { $seen[$rid] = $true }
+      }
+      foreach ($r in $inList) {
+        $rid = [string]$r.ResourceId
+        if ($rid -and $seen.ContainsKey($rid)) { continue }
+        $resources += [pscustomobject]@{
+          ResourceId        = $rid
+          ModuleName        = [string]$r.ModuleName
+          ModuleVersion     = [string]$r.ModuleVersion
+          InDesiredState    = $true
           DurationInSeconds = [string]$r.DurationInSeconds
           Error             = [string]$r.Error
         }
       }
+
+      # Counts derive from the de-duplicated resource set so the summary, the
+      # drift ratio and the detail table always agree.
+      $notCount = @($resources | Where-Object { -not $_.InDesiredState }).Count
+      $inCount = @($resources | Where-Object { $_.InDesiredState }).Count
     }
 
     if (($latest.Status -eq 'Failure') -or ($errors.Count -gt 0)) {

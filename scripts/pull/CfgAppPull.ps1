@@ -282,44 +282,14 @@ try {
         ValueData = "$($ConfigurationData.NonNodeData.Drives.Logs)\$($ConfigurationData.NonNodeData.IIS.httpErrFolder)"
         Ensure    = 'Present'
       }
-      # Grant the pull-server AppPool identity Modify on the DSC service
-      # folder so the JET (ESENT) repository can create Devices.edb and its
-      # edbtmp / edb log files. Avoids needing local admin on the AppPool
-      # identity (which would also be a privilege escalation risk because
-      # the same account runs SharePoint).
-      $pullServerDscServicePath = "$env:PROGRAMFILES\WindowsPowerShell\DscService"
-      $pullServerAppPoolUser    = $IISPULLAPP.UserName
-      Script MIDDLEWARE_PullServer_DscServiceAcl {
-        DependsOn  = $prereqDependencies
-        GetScript  = {
-          @{ Result = (Get-Acl -Path $using:pullServerDscServicePath).Access |
-              Where-Object { $_.IdentityReference -eq $using:pullServerAppPoolUser } |
-              Select-Object -ExpandProperty FileSystemRights -First 1 }
-        }
-        TestScript = {
-          if (-not (Test-Path -Path $using:pullServerDscServicePath)) { return $false }
-          $acl   = Get-Acl -Path $using:pullServerDscServicePath
-          $match = $acl.Access |
-              Where-Object { $_.IdentityReference -eq $using:pullServerAppPoolUser -and
-                             $_.AccessControlType -eq 'Allow' -and
-                             ($_.FileSystemRights.ToString() -match 'Modify|FullControl') }
-          return ($null -ne $match)
-        }
-        SetScript  = {
-          if (-not (Test-Path -Path $using:pullServerDscServicePath)) {
-            New-Item -Path $using:pullServerDscServicePath -ItemType Directory -Force | Out-Null
-          }
-          $acl  = Get-Acl -Path $using:pullServerDscServicePath
-          $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-            $using:pullServerAppPoolUser,
-            'Modify',
-            'ContainerInherit,ObjectInherit',
-            'None',
-            'Allow')
-          $acl.SetAccessRule($rule)
-          Set-Acl -Path $using:pullServerDscServicePath -AclObject $acl
-        }
-      }
+      # NOTE: granting the pull-server AppPool identity write access to the DSC
+      # service folder (so the ESENT repository can create Devices.edb) is done by
+      # a dedicated post-configuration script, NOT here. That folder is owned by
+      # TrustedInstaller and even SYSTEM/Administrators lack Change-Permissions on
+      # it, so the ACL change needs a takeown + icacls sequence that does not belong
+      # in the recurring DSC consistency loop. Run, once, after applying this MOF:
+      #   scripts\pull\Set-SPSPullServerPermission.ps1
+      # See scripts\pull\README.md.
       #Install DscService
       # Note: SqlProvider is intentionally NOT enabled. The inbox
       # Microsoft.Powershell.DesiredStateConfiguration.Service.dll on Windows

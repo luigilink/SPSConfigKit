@@ -1,0 +1,117 @@
+{
+  "Nodes": [
+    {
+      "AgentId": "52DA826D-00DE-4166-8ACB-73F2B46A7E00",
+      "NodeName": "APP1",
+      "ConfigurationNames": [
+        "CfgAppSps"
+      ],
+      "IPAddress": "10.1.1.11"
+    },
+    {
+      "AgentId": "7B1C0A44-9F2E-4C81-B6D3-2A5E9F0C1D22",
+      "NodeName": "WFE1",
+      "ConfigurationNames": [
+        "CfgAppSps"
+      ],
+      "IPAddress": "10.1.1.12"
+    },
+    {
+      "AgentId": "9C3E1B77-4D6A-4E2F-8B10-6F7A2C4E8D33",
+      "NodeName": "SCH1",
+      "ConfigurationNames": [
+        "CfgAppSps"
+      ],
+      "IPAddress": "10.1.1.13"
+    },
+    {
+      "AgentId": "A1F2D399-8E5B-4A73-9C24-7D8B3E5F1A44",
+      "NodeName": "OOS1",
+      "ConfigurationNames": [
+        "CfgAppSps"
+      ],
+      "IPAddress": "10.1.1.14"
+    },
+    {
+      "AgentId": "B4A5E611-2C7D-4F90-A138-9E0C4B6D2E55",
+      "NodeName": "SQL1",
+      "ConfigurationNames": [
+        "CfgAppSql"
+      ],
+      "IPAddress": "10.1.1.10"
+    }
+  ],
+  "Reports": {
+    "52DA826D-00DE-4166-8ACB-73F2B46A7E00": [
+      {
+        "JobId": "41bf4064-ab30-4a3c-a780-3c63faec5406",
+        "Id": "52DA826D-00DE-4166-8ACB-73F2B46A7E00",
+        "OperationType": "Consistency",
+        "RefreshMode": "Pull",
+        "Status": "Success",
+        "ConfigurationVersion": "2.0.0",
+        "NodeName": "APP1",
+        "StartTime": "2026-07-01T16:41:17.0906130+02:00",
+        "EndTime": "2026-07-01T16:42:17.0906130+02:00",
+        "Errors": [],
+        "StatusData": [
+          "{\"StartDate\":\"2026-07-01T16:49:17.1088270+02:00\",\"DurationInSeconds\":\"353.8\",\"Status\":\"Success\",\"LCMVersion\":\"2.0\",\"NumberOfResources\":\"3\",\"Type\":\"Consistency\",\"Mode\":\"Pull\",\"ResourcesInDesiredState\":[{\"ResourceId\":\"[SPFarm]APPLICATION_SpsCreateSPFarm\",\"ModuleName\":\"SharePointDsc\",\"ModuleVersion\":\"5.7.0\",\"InstanceName\":\"[SPFarm]APPLICATION_SpsCreateSPFarm\",\"InDesiredState\":\"True\",\"DurationInSeconds\":\"42.1\",\"Error\":\"\"},{\"ResourceId\":\"[SPInstall]APPLICATION_SpsInstallSharePoint\",\"ModuleName\":\"SharePointDsc\",\"ModuleVersion\":\"5.7.0\",\"InstanceName\":\"[SPInstall]APPLICATION_SpsInstallSharePoint\",\"InDesiredState\":\"True\",\"DurationInSeconds\":\"310.8\",\"Error\":\"\"},{\"ResourceId\":\"[xCredSSP]SECURITY_CredSSPServer\",\"ModuleName\":\"xCredSSP\",\"ModuleVersion\":\"1.4.0\",\"InstanceName\":\"[xCredSSP]SECURITY_CredSSPServer\",\"InDesiredState\":\"True\",\"DurationInSeconds\":\"0.9\",\"Error\":\"\"}],\"ResourcesNotInDesiredState\":[]}"
+        ]
+      }
+    ],
+    "7B1C0A44-9F2E-4C81-B6D3-2A5E9F0C1D22": [
+      {
+        "JobId": "6a023694-fd57-4e86-8649-34a0eaf5d6e6",
+        "Id": "7B1C0A44-9F2E-4C81-B6D3-2A5E9F0C1D22",
+        "OperationType": "Consistency",
+        "RefreshMode": "Pull",
+        "Status": "Success",
+        "ConfigurationVersion": "2.0.0",
+        "NodeName": "WFE1",
+        "StartTime": "2026-07-01T16:43:17.0906130+02:00",
+        "EndTime": "2026-07-01T16:44:17.0906130+02:00",
+        "Errors": [],
+        "StatusData": [
+          "{\"StartDate\":\"2026-07-01T16:49:17.1345080+02:00\",\"DurationInSeconds\":\"43.6\",\"Status\":\"Success\",\"LCMVersion\":\"2.0\",\"NumberOfResources\":\"2\",\"Type\":\"Consistency\",\"Mode\":\"Pull\",\"ResourcesInDesiredState\":[{\"ResourceId\":\"[SPFarm]APPLICATION_SpsJoinSPFarm\",\"ModuleName\":\"SharePointDsc\",\"ModuleVersion\":\"5.7.0\",\"InstanceName\":\"[SPFarm]APPLICATION_SpsJoinSPFarm\",\"InDesiredState\":\"True\",\"DurationInSeconds\":\"38.4\",\"Error\":\"\"}],\"ResourcesNotInDesiredState\":[{\"ResourceId\":\"[SPDistributedCacheService]APPLICATION_SpsEnableDistributedCache\",\"ModuleName\":\"SharePointDsc\",\"ModuleVersion\":\"5.7.0\",\"InstanceName\":\"[SPDistributedCacheService]APPLICATION_SpsEnableDistributedCache\",\"InDesiredState\":\"False\",\"DurationInSeconds\":\"5.2\",\"Error\":\"\"}]}"
+        ]
+      }
+    ],
+    "9C3E1B77-4D6A-4E2F-8B10-6F7A2C4E8D33": [
+      {
+        "JobId": "c9c10343-b356-45af-9775-9c5a51db7594",
+        "Id": "9C3E1B77-4D6A-4E2F-8B10-6F7A2C4E8D33",
+        "OperationType": "Consistency",
+        "RefreshMode": "Pull",
+        "Status": "Failure",
+        "ConfigurationVersion": "2.0.0",
+        "NodeName": "SCH1",
+        "StartTime": "2026-07-01T16:45:17.0906130+02:00",
+        "EndTime": "2026-07-01T16:46:17.0906130+02:00",
+        "Errors": [
+          "The search service instance is not online on server SCH1."
+        ],
+        "StatusData": [
+          "{\"StartDate\":\"2026-07-01T16:49:17.1347740+02:00\",\"DurationInSeconds\":\"22.0\",\"Status\":\"Failure\",\"LCMVersion\":\"2.0\",\"NumberOfResources\":\"2\",\"Type\":\"Consistency\",\"Mode\":\"Pull\",\"ResourcesInDesiredState\":[{\"ResourceId\":\"[SPSearchServiceApp]APPLICATION_SpsSvcAppSearchServiceApp\",\"ModuleName\":\"SharePointDsc\",\"ModuleVersion\":\"5.7.0\",\"InstanceName\":\"[SPSearchServiceApp]APPLICATION_SpsSvcAppSearchServiceApp\",\"InDesiredState\":\"True\",\"DurationInSeconds\":\"22.0\",\"Error\":\"\"}],\"ResourcesNotInDesiredState\":[{\"ResourceId\":\"[SPSearchTopology]APPLICATION_SpsSvcSearchTopo\",\"ModuleName\":\"SharePointDsc\",\"ModuleVersion\":\"5.7.0\",\"InstanceName\":\"[SPSearchTopology]APPLICATION_SpsSvcSearchTopo\",\"InDesiredState\":\"False\",\"DurationInSeconds\":\"0\",\"Error\":\"The search service instance is not online on server SCH1.\"}]}"
+        ]
+      }
+    ],
+    "A1F2D399-8E5B-4A73-9C24-7D8B3E5F1A44": [
+      {
+        "JobId": "f6863556-d2d9-4d94-88e2-6402cdc69201",
+        "Id": "A1F2D399-8E5B-4A73-9C24-7D8B3E5F1A44",
+        "OperationType": "Consistency",
+        "RefreshMode": "Pull",
+        "Status": "Success",
+        "ConfigurationVersion": "2.0.0",
+        "NodeName": "OOS1",
+        "StartTime": "2026-07-01T16:40:17.0906130+02:00",
+        "EndTime": "2026-07-01T16:41:17.0906130+02:00",
+        "Errors": [],
+        "StatusData": [
+          "{\"StartDate\":\"2026-07-01T16:49:17.1349570+02:00\",\"DurationInSeconds\":\"139.2\",\"Status\":\"Success\",\"LCMVersion\":\"2.0\",\"NumberOfResources\":\"2\",\"Type\":\"Consistency\",\"Mode\":\"Pull\",\"ResourcesInDesiredState\":[{\"ResourceId\":\"[OfficeOnlineServerInstall]APPLICATION_OOSInstallBinaries\",\"ModuleName\":\"OfficeOnlineServerDsc\",\"ModuleVersion\":\"1.5.0\",\"InstanceName\":\"[OfficeOnlineServerInstall]APPLICATION_OOSInstallBinaries\",\"InDesiredState\":\"True\",\"DurationInSeconds\":\"120.5\",\"Error\":\"\"},{\"ResourceId\":\"[OfficeOnlineServerFarm]APPLICATION_CreateWACFarm\",\"ModuleName\":\"OfficeOnlineServerDsc\",\"ModuleVersion\":\"1.5.0\",\"InstanceName\":\"[OfficeOnlineServerFarm]APPLICATION_CreateWACFarm\",\"InDesiredState\":\"True\",\"DurationInSeconds\":\"18.7\",\"Error\":\"\"}],\"ResourcesNotInDesiredState\":[]}"
+        ]
+      }
+    ],
+    "B4A5E611-2C7D-4F90-A138-9E0C4B6D2E55": []
+  }
+}

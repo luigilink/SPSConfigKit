@@ -64,11 +64,13 @@
     ManageDisks = $true
     # Data disks to initialise on first boot (StorageDsc, keyed by disk Number).
     # Drives.{Data,Logs} letters consumed elsewhere are DERIVED from this by Type.
-    # Adjust Id to match 'Get-Disk' on the node (usually 0=OS, 1=Data, 2=Logs).
+    # NOTE: disk numbers are environment-specific. A plain VM is usually
+    #   0=OS, 1=Data, 2=Logs; an Azure VM WITH a temp disk shifts to
+    #   0=OS, 1=<temp>, 2=Data, 3=Logs — adjust Id to match 'Get-Disk'.
     Disks       = @(
       @{ Id = '0'; Letter = 'C'; Type = 'OS'  ; FSLabel = 'SYSTEM'; AllocationUnitSize = 4KB   }
-      @{ Id = '1'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB   }
-      @{ Id = '2'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB   }
+      @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB   }
+      @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB   }
     )
     ADC         = @{
       certificates = @(

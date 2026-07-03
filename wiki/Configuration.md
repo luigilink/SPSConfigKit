@@ -166,11 +166,13 @@ NonNodeData = @{
     # Data disks to initialise on first boot (StorageDsc, keyed by disk Number).
     # This is the single source of truth for storage: the Drives.{Data,Logs,Temp}
     # hashtable consumed everywhere else is DERIVED from it by Type (see below).
-    # Adjust Id to match 'Get-Disk' on the node (usually 0=OS, 1=Data, 2=Logs).
+    # Disk numbers are environment-specific — a plain VM is usually 0=OS, 1=Data,
+    # 2=Logs; an Azure VM WITH a temp disk shifts to 0=OS, 1=<temp>, 2=Data,
+    # 3=Logs. Adjust Id to match 'Get-Disk' on the node.
     Disks      = @(
         @{ Id = '0'; Letter = 'C'; Type = 'OS'  ; FSLabel = 'SYSTEM'; AllocationUnitSize = 4KB }
-        @{ Id = '1'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB }
-        @{ Id = '2'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB }
+        @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB }
+        @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB }
     )
 
     ADC        = @{
@@ -249,7 +251,7 @@ and is the canonical schema &mdash; treat the snippet above as a map.
 
   | Key                  | Required | Description                                                                                     |
   | -------------------- | -------- | ----------------------------------------------------------------------------------------------- |
-  | `Id`                 | yes      | The disk **Number** as reported by `Get-Disk` (StorageDsc's default `DiskIdType`). Portable across bare-metal, VMware, Hyper-V and Azure &mdash; **not** an Azure LUN. Adjust to match the target node. |
+  | `Id`                 | yes      | The disk **Number** as reported by `Get-Disk` (StorageDsc's default `DiskIdType`). Portable across bare-metal, VMware, Hyper-V and Azure &mdash; **not** an Azure LUN. Numbers are environment-specific: a plain VM is usually `0=OS, 1=Data, 2=Logs`, but an Azure VM **with a temporary disk** shifts to `0=OS, 1=<temp>, 2=Data, 3=Logs`. Adjust to match the target node. |
   | `Letter`             | yes      | Drive letter to assign (`C`, `F`, `G`, &hellip;). Also the key used to derive `Drives`.          |
   | `Type`               | yes      | Semantic role: `OS`, `Data`, `Logs`, or `Temp`. Drives the derivation and the OS-exclusion filter. |
   | `FSLabel`            | yes      | NTFS volume label (UPPERCASE convention: `SYSTEM` / `DATA` / `LOGS` / `TEMP`).                   |

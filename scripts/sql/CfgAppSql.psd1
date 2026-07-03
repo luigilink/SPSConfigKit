@@ -35,8 +35,8 @@
     #   0=OS, 1=<temp>, 2=Data, 3=Logs — adjust Id to match 'Get-Disk'.
     Disks       = @(
       @{ Id = '0'; Letter = 'C'; Type = 'OS'  ; FSLabel = 'SYSTEM'; AllocationUnitSize = 4KB   }
-      @{ Id = '1'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 64KB  }
-      @{ Id = '2'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 64KB  }
+      @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 64KB  }
+      @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 64KB  }
     )
     # Optional installation-media path overrides for customers whose file hierarchy
     # differs from the kit's defaults. When omitted the script falls back to:

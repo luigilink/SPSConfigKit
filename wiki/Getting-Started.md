@@ -54,6 +54,7 @@ versions below are the ones currently pinned:
 | PSDscResources                  | 2.12.0.0   |
 | SharePointDsc                   | 5.7.0      |
 | SqlServerDsc                    | 17.5.1     |
+| StorageDsc                      | 6.0.1      |
 | WebAdministrationDsc            | 4.2.1      |
 | xCredSSP                        | 1.4.0      |
 | xPSDesiredStateConfiguration    | 9.2.1      |
@@ -179,6 +180,15 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
 6. **Customise `scripts/sps/CfgAppSps.psd1`** to describe your nodes, your
    web applications, your SQL aliases, and your search topology. See the
    [Configuration](./Configuration) page for a walkthrough of each section.
+
+   > [!NOTE]
+   > The `NonNodeData.Disks` block describes the node's physical data disks
+   > (`SYSTEM` / `DATA` / `LOGS`, keyed by disk **Number**). On a brand-new
+   > farm, leave `ManageDisks = $true` and the apply will online, partition,
+   > format and letter your raw data disks automatically &mdash; no manual
+   > `Get-Disk` / `Format-Volume` step. Set `ManageDisks = $false` if the
+   > customer has already formatted their volumes. Adjust each `Id` to match
+   > `Get-Disk` on the target node.
 
 7. **Validate your ConfigurationData** before compiling any MOF:
 

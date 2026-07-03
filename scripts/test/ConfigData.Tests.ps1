@@ -60,9 +60,27 @@ BeforeDiscovery {
   # Source media is only relevant to product configs that copy install bits
   # (SPS / OOS / SQL). PDC and PULL declare no NonNodeData.SourcePath.
   $needsSourcePath = [bool]($hasSps -or $hasOos -or $hasSql)
-  # Validate only the drive letters this config actually declares, so PDC
-  # (Data only) and PULL (Logs only) are not held to the SPS/SQL layout.
-  $declaredDrives = @($cfg.NonNodeData.Drives.Keys)
+  # Drives are now DERIVED from the authoritative NonNodeData.Disks list by the
+  # Cfg*.ps1 scripts (a drive letter is declared only once). Reproduce that
+  # derivation here so the drive-letter tests validate the effective values, and
+  # expose the raw Disks list for its own tests.
+  $disks = @($cfg.NonNodeData.Disks)
+  $derivedDrives = @{}
+  foreach ($disk in $disks) {
+    if (-not [string]::IsNullOrWhiteSpace($disk.Type) -and -not [string]::IsNullOrWhiteSpace($disk.Letter)) {
+      switch ($disk.Type) {
+        'Data' { $derivedDrives.Data = ($disk.Letter.TrimEnd(':')) + ':' }
+        'Logs' { $derivedDrives.Logs = ($disk.Letter.TrimEnd(':')) + ':' }
+        'Temp' { $derivedDrives.Temp = ($disk.Letter.TrimEnd(':')) + ':' }
+      }
+    }
+  }
+  if (-not $derivedDrives.ContainsKey('Temp') -and $derivedDrives.ContainsKey('Data')) {
+    $derivedDrives.Temp = $derivedDrives.Data
+  }
+  $declaredDrives = @($derivedDrives.Keys)
+  # Non-OS disks that DSC will initialise (used by the Disks tests below).
+  $dataDisks = @($disks | Where-Object { $_.Type -ne 'OS' })
 
   # ---- data-driven test inputs ----
   $allNodes = @($cfg.AllNodes | Where-Object { $_.NodeName -and $_.NodeName -ne '*' })
@@ -118,6 +136,22 @@ BeforeAll {
   $script:SecretsPath = $SecretsPath
   $script:SkipFilesystem = [bool]$SkipFilesystem
   $script:ConfigData = Import-PowerShellDataFile -LiteralPath $ConfigPath
+
+  # Reproduce the Drives derivation the Cfg*.ps1 scripts do from NonNodeData.Disks,
+  # so the drive-letter tests validate the effective (derived) values at run time.
+  $script:DerivedDrives = @{}
+  foreach ($disk in @($script:ConfigData.NonNodeData.Disks)) {
+    if (-not [string]::IsNullOrWhiteSpace($disk.Type) -and -not [string]::IsNullOrWhiteSpace($disk.Letter)) {
+      switch ($disk.Type) {
+        'Data' { $script:DerivedDrives.Data = ($disk.Letter.TrimEnd(':')) + ':' }
+        'Logs' { $script:DerivedDrives.Logs = ($disk.Letter.TrimEnd(':')) + ':' }
+        'Temp' { $script:DerivedDrives.Temp = ($disk.Letter.TrimEnd(':')) + ':' }
+      }
+    }
+  }
+  if (-not $script:DerivedDrives.ContainsKey('Temp') -and $script:DerivedDrives.ContainsKey('Data')) {
+    $script:DerivedDrives.Temp = $script:DerivedDrives.Data
+  }
 
   if (Test-Path -LiteralPath $SecretsPath) {
     $script:SecretsData = Import-PowerShellDataFile -LiteralPath $SecretsPath
@@ -238,7 +272,7 @@ Describe 'AllNodes integrity' {
 }
 
 # ===========================================================================
-# 3. Common NonNodeData (Drives, SourcePath)
+# 3. Common NonNodeData (Disks / derived Drives, SourcePath)
 # ===========================================================================
 Describe 'NonNodeData common' {
   Context 'Source media path' -Skip:(-not $needsSourcePath) {
@@ -252,10 +286,46 @@ Describe 'NonNodeData common' {
     }
   }
 
-  It 'NonNodeData.Drives.<_> is formatted as <letter>:' -ForEach $declaredDrives {
-    $drive = $script:ConfigData.NonNodeData.Drives.$_
+  It 'derived Drives.<_> is formatted as <letter>:' -ForEach $declaredDrives {
+    $drive = $script:DerivedDrives.$_
     $drive | Should -Not -BeNullOrEmpty
     $drive | Should -Match '^[A-Z]:$'
+  }
+}
+
+# ===========================================================================
+# 3b. Disks — the authoritative data-disk list DSC initialises (StorageDsc)
+# ===========================================================================
+Describe 'NonNodeData Disks' {
+  It 'declares a NonNodeData.Disks list' {
+    @($script:ConfigData.NonNodeData.Disks).Count | Should -BeGreaterThan 0
+  }
+
+  It 'declares at least the SYSTEM/DATA/LOGS disks (best practice)' {
+    $types = @($script:ConfigData.NonNodeData.Disks | ForEach-Object Type)
+    $types | Should -Contain 'OS'
+    $types | Should -Contain 'Data'
+    $types | Should -Contain 'Logs'
+  }
+
+  It 'exactly one disk carries the OS type' {
+    @($script:ConfigData.NonNodeData.Disks | Where-Object Type -eq 'OS').Count | Should -Be 1
+  }
+
+  It 'disk Ids are unique' {
+    $ids = @($script:ConfigData.NonNodeData.Disks | ForEach-Object { [string]$_.Id })
+    ($ids | Group-Object | Where-Object Count -GT 1).Count | Should -Be 0
+  }
+
+  It 'drive letters are unique' {
+    $letters = @($script:ConfigData.NonNodeData.Disks | ForEach-Object { [string]$_.Letter })
+    ($letters | Group-Object | Where-Object Count -GT 1).Count | Should -Be 0
+  }
+
+  It '<_.Letter> (<_.Type>) has an Id, single-letter drive and a label' -ForEach $dataDisks {
+    [string]$_.Id | Should -Match '^\d+$' -Because 'DiskId is keyed by disk Number'
+    [string]$_.Letter | Should -Match '^[A-Z]$'
+    $_.FSLabel | Should -Not -BeNullOrEmpty
   }
 }
 
@@ -388,7 +458,7 @@ Describe 'SharePoint configuration' -Skip:(-not $hasSps) {
       $script:SpsPaths = script:Resolve-ProductPath `
         -ProductConfig $script:ConfigData.NonNodeData.SharePoint `
         -SourceRoot    $script:ConfigData.NonNodeData.SourcePath `
-        -DestinationRoot ("{0}\SoftwarePackages" -f $script:ConfigData.NonNodeData.Drives.Data) `
+        -DestinationRoot ("{0}\SoftwarePackages" -f $script:DerivedDrives.Data) `
         -DefaultSubFolder 'SPS'
     }
     It 'SourcePath is reachable' {
@@ -434,7 +504,7 @@ Describe 'OOS configuration' -Skip:(-not $hasOos) {
       $script:OosPaths = script:Resolve-ProductPath `
         -ProductConfig $script:ConfigData.NonNodeData.OOS `
         -SourceRoot    $script:ConfigData.NonNodeData.SourcePath `
-        -DestinationRoot ("{0}\SoftwarePackages" -f $script:ConfigData.NonNodeData.Drives.Data) `
+        -DestinationRoot ("{0}\SoftwarePackages" -f $script:DerivedDrives.Data) `
         -DefaultSubFolder 'OOS'
     }
     It 'SourcePath is reachable' {
@@ -466,7 +536,7 @@ Describe 'SQL configuration' -Skip:(-not $hasSql) {
       $script:SqlPaths = script:Resolve-ProductPath `
         -ProductConfig $sqlCfg `
         -SourceRoot    $script:ConfigData.NonNodeData.SourcePath `
-        -DestinationRoot ("{0}\SoftwarePackages" -f $script:ConfigData.NonNodeData.Drives.Data) `
+        -DestinationRoot ("{0}\SoftwarePackages" -f $script:DerivedDrives.Data) `
         -DefaultSubFolder 'SQL'
     }
     It 'SourcePath is reachable' {

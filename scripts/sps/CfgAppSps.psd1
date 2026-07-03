@@ -60,10 +60,16 @@
     # (SourcePath + CerFileName / PfxFileName), so the host is defined only here.
     SourcePath  = '\\PULL\Softwarepackages'
     DomainName  = 'contoso.com'
-    Drives      = @{
-      Data = 'F:'
-      Logs = 'G:'
-    }
+    # Set to $false when the customer manages storage themselves. Default $true.
+    ManageDisks = $true
+    # Data disks to initialise on first boot (StorageDsc, keyed by disk Number).
+    # Drives.{Data,Logs} letters consumed elsewhere are DERIVED from this by Type.
+    # Adjust Id to match 'Get-Disk' on the node (usually 0=OS, 1=Data, 2=Logs).
+    Disks       = @(
+      @{ Id = '0'; Letter = 'C'; Type = 'OS'  ; FSLabel = 'SYSTEM'; AllocationUnitSize = 4KB   }
+      @{ Id = '1'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB   }
+      @{ Id = '2'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB   }
+    )
     ADC         = @{
       certificates = @(
         @{

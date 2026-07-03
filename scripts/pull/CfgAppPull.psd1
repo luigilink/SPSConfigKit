@@ -18,9 +18,16 @@
     # (e.g. this pull server), NOT on a domain controller. The certificate path is
     # derived from this by CfgAppPull.ps1 (SourcePath + CerFileName / PfxFileName).
     SourcePath = '\\PULL\Softwarepackages'
-    Drives = @{
-      Logs = 'G:'
-    }
+    # Set to $false when the customer manages storage themselves. Default $true.
+    ManageDisks = $true
+    # Data disks to initialise on first boot (StorageDsc, keyed by disk Number).
+    # Drives.{Data,Logs} letters are DERIVED from this by Type. Best practice: at
+    # least 3 disks (SYSTEM/DATA/LOGS). Adjust Id to match 'Get-Disk' on the node.
+    Disks = @(
+      @{ Id = '0'; Letter = 'C'; Type = 'OS';   FSLabel = 'SYSTEM' ; AllocationUnitSize = 4KB }
+      @{ Id = '1'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'   ; AllocationUnitSize = 4KB }
+      @{ Id = '2'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'   ; AllocationUnitSize = 4KB }
+    )
     ADC        = @{
       certificates = @(
         @{

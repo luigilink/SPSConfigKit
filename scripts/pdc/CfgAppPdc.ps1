@@ -107,6 +107,23 @@ try {
     }
   }
 
+  # DRY: derive the semantic Drives hashtable (Data/Logs/Temp -> letter) from the
+  # authoritative NonNodeData.Disks list, so a drive letter is declared only once.
+  # Temp falls back to the Data drive when no dedicated Temp disk is declared.
+  if ($configurationData.NonNodeData.Disks) {
+    $byType = @{}
+    foreach ($disk in $configurationData.NonNodeData.Disks) {
+      if (-not [string]::IsNullOrWhiteSpace($disk.Type) -and -not [string]::IsNullOrWhiteSpace($disk.Letter)) {
+        $byType[$disk.Type] = ($disk.Letter.TrimEnd(':')) + ':'
+      }
+    }
+    $drives = @{}
+    if ($byType.Data) { $drives.Data = $byType.Data }
+    if ($byType.Logs) { $drives.Logs = $byType.Logs }
+    $drives.Temp = if ($byType.Temp) { $byType.Temp } elseif ($byType.Data) { $byType.Data } else { $null }
+    $configurationData.NonNodeData.Drives = $drives
+  }
+
   if ([string]::IsNullOrWhiteSpace($secretsFile)) {
     write-host "No secrets file provided. Try to use Secrets.psd1 in the parent directory of the script."
     $secretsFile = Join-Path -Path (Split-Path -Path $scriptBasePath -Parent) -ChildPath 'Secrets.psd1'
@@ -159,6 +176,7 @@ try {
     Import-DscResource -ModuleName CertificateDsc -ModuleVersion 6.0.0
     Import-DscResource -ModuleName ComputerManagementDsc -ModuleVersion 10.0.0
     Import-DscResource -ModuleName PSDscResources -ModuleVersion 2.12.0.0
+    Import-DscResource -ModuleName StorageDsc -ModuleVersion 6.0.1
 
     #For All servers
     Node $AllNodes.Nodename {
@@ -171,6 +189,30 @@ try {
         # Initialize-DscEncryption.ps1; without it the LCM cannot process an
         # encrypted MOF ("LCM is not configured with a certificate").
         CertificateID      = $Node.Thumbprint
+      }
+
+      #Initialise the data disks (online -> GPT -> NTFS -> drive letter) before
+      #anything writes to them. Keyed by disk Number (StorageDsc default), driven
+      #by NonNodeData.Disks; the OS disk (Type 'OS') is never touched. Skipped when
+      #NonNodeData.ManageDisks is $false (customer manages their own storage).
+      if ($ConfigurationData.NonNodeData.ManageDisks -ne $false) {
+        foreach ($disk in ($ConfigurationData.NonNodeData.Disks | Where-Object { $_.Type -ne 'OS' })) {
+          WaitForDisk "WaitForDisk_$($disk.Letter)" {
+            DiskId           = $disk.Id
+            DiskIdType       = 'Number'
+            RetryIntervalSec = 20
+            RetryCount       = 30
+          }
+          Disk "Disk_$($disk.Letter)" {
+            DiskId             = $disk.Id
+            DiskIdType         = 'Number'
+            DriveLetter        = $disk.Letter
+            FSFormat           = 'NTFS'
+            FSLabel            = $disk.FSLabel
+            AllocationUnitSize = $disk.AllocationUnitSize
+            DependsOn          = "[WaitForDisk]WaitForDisk_$($disk.Letter)"
+          }
+        }
       }
       #Create the SoftwarePackages folder
       File APPLICATION_SpsAddSoftwarePackages {

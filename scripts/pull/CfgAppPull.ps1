@@ -107,6 +107,23 @@ try {
     }
   }
 
+  # DRY: derive the semantic Drives hashtable (Data/Logs/Temp -> letter) from the
+  # authoritative NonNodeData.Disks list, so a drive letter is declared only once.
+  # Temp falls back to the Data drive when no dedicated Temp disk is declared.
+  if ($configurationData.NonNodeData.Disks) {
+    $byType = @{}
+    foreach ($disk in $configurationData.NonNodeData.Disks) {
+      if (-not [string]::IsNullOrWhiteSpace($disk.Type) -and -not [string]::IsNullOrWhiteSpace($disk.Letter)) {
+        $byType[$disk.Type] = ($disk.Letter.TrimEnd(':')) + ':'
+      }
+    }
+    $drives = @{}
+    if ($byType.Data) { $drives.Data = $byType.Data }
+    if ($byType.Logs) { $drives.Logs = $byType.Logs }
+    $drives.Temp = if ($byType.Temp) { $byType.Temp } elseif ($byType.Data) { $byType.Data } else { $null }
+    $configurationData.NonNodeData.Drives = $drives
+  }
+
   if ([string]::IsNullOrWhiteSpace($secretsFile)) {
     Write-Host 'No secrets file provided. Try to use Secrets.psd1 in the parent directory of the script.'
     $secretsFile = Join-Path -Path (Split-Path -Path $scriptBasePath -Parent) -ChildPath 'Secrets.psd1'
@@ -186,6 +203,7 @@ try {
         ConfigurationMode  = 'ApplyOnly'
         RebootNodeIfNeeded = $true
       }
+
       #Stop unnecessary Windows Services
       Service SYSTEM_SvcSpoolerManualStopped {
         Name        = 'Spooler'

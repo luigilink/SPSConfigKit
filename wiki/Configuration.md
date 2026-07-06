@@ -160,7 +160,20 @@ NonNodeData = @{
     # so a share on the DC fails at apply with "Access is denied").
     SourcePath = '\\PULL\Softwarepackages'    # binaries + .cer/.pfx share
     DomainName = 'contoso.com'
-    Drives     = @{ Data = 'F:'; Logs = 'G:' }
+
+    # Set to $false when the customer manages storage themselves. Default $true.
+    ManageDisks = $true
+    # Data disks, initialised by scripts/init/Initialize-DscDisks.ps1 (keyed by
+    # disk Number). This is the single source of truth for storage: the Drives.{Data,Logs,Temp}
+    # hashtable consumed everywhere else is DERIVED from it by Type (see below).
+    # Disk numbers are environment-specific — a plain VM is usually 0=OS, 1=Data,
+    # 2=Logs; an Azure VM WITH a temp disk shifts to 0=OS, 1=<temp>, 2=Data,
+    # 3=Logs. Adjust Id to match 'Get-Disk' on the node.
+    Disks      = @(
+        @{ Id = '0'; Letter = 'C'; Type = 'OS'  ; FSLabel = 'SYSTEM'; AllocationUnitSize = 4KB }
+        @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB }
+        @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB }
+    )
 
     ADC        = @{
         # Each entry carries only the .cer / .pfx FILE NAME; the full path is
@@ -233,9 +246,41 @@ and is the canonical schema &mdash; treat the snippet above as a map.
 - **`SourcePath`** is the SMB share that hosts every binary, language pack,
   CU, `.cer`, and `.pfx` referenced by the kit. Configure share-level read
   for the setup account on every node.
-- **`Drives.Data` / `Drives.Logs`** prefix every per-node path so each
-  farm role can point at different physical drives without editing the
-  script.
+- **`Disks` is the storage source of truth** &mdash; an ordered array of
+  physical data disks the node should own. Each entry declares:
+
+  | Key                  | Required | Description                                                                                     |
+  | -------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+  | `Id`                 | yes      | The disk **Number** as reported by `Get-Disk`. Portable across bare-metal, VMware, Hyper-V and Azure &mdash; **not** an Azure LUN. Numbers are environment-specific: a plain VM is usually `0=OS, 1=Data, 2=Logs`, but an Azure VM **with a temporary disk** shifts to `0=OS, 1=<temp>, 2=Data, 3=Logs`. Adjust to match the target node. |
+  | `Letter`             | yes      | Drive letter to assign (`C`, `F`, `G`, &hellip;). Also the key used to derive `Drives`.          |
+  | `Type`               | yes      | Semantic role: `OS`, `Data`, `Logs`, or `Temp`. Drives the derivation and the OS-exclusion filter. |
+  | `FSLabel`            | yes      | NTFS volume label (UPPERCASE convention: `SYSTEM` / `DATA` / `LOGS` / `TEMP`).                   |
+  | `AllocationUnitSize` | yes      | Cluster size (e.g. `4KB`; SQL data/log volumes use `64KB`).                                      |
+
+  Declaring at least three disks (`SYSTEM` / `DATA` / `LOGS`) is the
+  recommended baseline for every tier.
+- **`Drives` is DERIVED, never hand-written** &mdash; each `Cfg*.ps1` builds
+  `NonNodeData.Drives = @{ Data; Logs; Temp }` from `Disks` (keyed by `Type`)
+  right after loading the psd1, so the ~30 existing `Drives.Data` / `Drives.Logs`
+  consumers keep working unchanged. `Temp` falls back to the `Data` letter when
+  no dedicated `Temp` disk is declared. A drive letter is therefore declared
+  **once** (in `Disks`) instead of duplicated. `Drives.Data` / `Drives.Logs`
+  prefix every per-node path so each farm role can point at different physical
+  drives without editing the script.
+- **`ManageDisks` (bool, default `$true`)** gates disk initialisation by the
+  **`scripts/init/Initialize-DscDisks.ps1`** bootstrap script. Disk preparation
+  is a one-time node-prep step (like joining the domain or installing the DSC
+  modules), so it runs during bootstrap &mdash; **not** inside the recurring
+  application MOF &mdash; and reads this same `Disks` block via `-ConfigPath`.
+  When `$true`, the script onlines each raw non-`OS` disk, applies a GPT
+  partition, formats NTFS with the requested `FSLabel` / `AllocationUnitSize`
+  and assigns the drive letter, so a brand-new farm has its volumes before
+  anything writes to them. The `OS` disk is **never** touched. Set
+  `ManageDisks = $false` when the customer has already initialised and formatted
+  their volumes: the script exits without touching any disk, but `Drives` is
+  still derived by the configuration so every path resolves. The script is
+  idempotent and **non-destructive** &mdash; a disk that already carries data is
+  reported and left intact, never reformatted.
 - **Per-product path overrides (optional)** &mdash; if your customer's file
   hierarchy doesn't match the kit's default
   (`<SourcePath>\SPS` &rarr; `<Drives.Data>\SoftwarePackages\SPS\{BIN,LP,CU}`
@@ -391,8 +436,12 @@ are skipped automatically (e.g. SharePoint checks are not run against
 - **AllNodes** &mdash; `NodeName` values unique; exactly one `IsMaster`
   per role family (SPS, OOS); at least one `IsSPSServer` / `IsOOSServer`
   / `IsSQLServer` when the matching `NonNodeData` section is present.
-- **Drives &amp; `SourcePath`** &mdash; `Drives.Data` / `Drives.Logs`
-  match `^[A-Z]:$`; `NonNodeData.SourcePath` is a UNC or rooted local
+- **Disks &amp; Drives** &mdash; `NonNodeData.Disks` is present and each entry
+  has `Id` / `Letter` / `Type` / `FSLabel` / `AllocationUnitSize`; disk `Id`s
+  and `Letter`s are unique; exactly one `OS` disk; the `SYSTEM` / `DATA` /
+  `LOGS` roles are declared. The `Drives.Data` / `Drives.Logs` values derived
+  from `Disks` match `^[A-Z]:$`.
+- **`SourcePath`** &mdash; `NonNodeData.SourcePath` is a UNC or rooted local
   path.
 - **Product key** &mdash; `SharePoint.ProductKey` matches
   `XXXXX-XXXXX-XXXXX-XXXXX-XXXXX` **and** is not the placeholder

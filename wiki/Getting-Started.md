@@ -180,6 +180,25 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    web applications, your SQL aliases, and your search topology. See the
    [Configuration](./Configuration) page for a walkthrough of each section.
 
+   > [!NOTE]
+   > **Data disks** &mdash; the `NonNodeData.Disks` block describes the node's
+   > physical data disks (`SYSTEM` / `DATA` / `LOGS`, keyed by disk **Number**).
+   > On a brand-new farm, prepare them once per node with the bootstrap helper,
+   > which reads this same block and onlines / GPT-partitions / NTFS-formats /
+   > letters your raw data disks &mdash; no manual `Get-Disk` / `Format-Volume`
+   > step:
+   >
+   > ```powershell
+   > .\scripts\init\Initialize-DscDisks.ps1 -ConfigPath .\scripts\sps\CfgAppSps.psd1
+   > ```
+   >
+   > Run it **after** `Initialize-DscNode.ps1` and **before** compiling / applying
+   > the node's MOF (and before `Initialize-SoftwarePackages.ps1`, which writes to
+   > `<Data>:\SoftwarePackages`). It is idempotent and non-destructive. Set
+   > `ManageDisks = $false` if the customer has already formatted their volumes
+   > (the script then does nothing). Adjust each `Id` to match `Get-Disk` on the
+   > target node.
+
 7. **Validate your ConfigurationData** before compiling any MOF:
 
    ```powershell

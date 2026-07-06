@@ -60,10 +60,18 @@
     # (SourcePath + CerFileName / PfxFileName), so the host is defined only here.
     SourcePath  = '\\PULL\Softwarepackages'
     DomainName  = 'contoso.com'
-    Drives      = @{
-      Data = 'F:'
-      Logs = 'G:'
-    }
+    # Set to $false when the customer manages storage themselves. Default $true.
+    ManageDisks = $true
+    # Data disks, initialised by scripts/init/Initialize-DscDisks.ps1 (keyed by disk Number).
+    # Drives.{Data,Logs} letters consumed elsewhere are DERIVED from this by Type.
+    # NOTE: disk numbers are environment-specific. A plain VM is usually
+    #   0=OS, 1=Data, 2=Logs; an Azure VM WITH a temp disk shifts to
+    #   0=OS, 1=<temp>, 2=Data, 3=Logs — adjust Id to match 'Get-Disk'.
+    Disks       = @(
+      @{ Id = '0'; Letter = 'C'; Type = 'OS'  ; FSLabel = 'SYSTEM'; AllocationUnitSize = 4KB   }
+      @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB   }
+      @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB   }
+    )
     ADC         = @{
       certificates = @(
         @{

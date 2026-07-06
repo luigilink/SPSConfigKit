@@ -23,9 +23,18 @@
     # (e.g. the pull server), NOT on a domain controller. Certificate paths are
     # derived from this by CfgAppPdc.ps1 (SourcePath + CerFileName / PfxFileName).
     SourcePath  = '\\PULL\Softwarepackages'
-    Drives      = @{
-      Data = 'F:'
-    }
+    # Set to $false when the customer manages storage themselves. Default $true.
+    ManageDisks = $true
+    # Data disks, initialised by scripts/init/Initialize-DscDisks.ps1 (keyed by disk Number).
+    # Drives.{Data,Logs} letters are DERIVED from this by Type. Best practice: at
+    # least 3 disks (SYSTEM/DATA/LOGS). Disk numbers are environment-specific:
+    #   a plain VM is usually 0=OS, 1=Data, 2=Logs; an Azure VM WITH a temp disk
+    #   shifts to 0=OS, 1=<temp>, 2=Data, 3=Logs — adjust Id to match 'Get-Disk'.
+    Disks       = @(
+      @{ Id = '0'; Letter = 'C'; Type = 'OS';   FSLabel = 'SYSTEM' ; AllocationUnitSize = 4KB }
+      @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'   ; AllocationUnitSize = 4KB }
+      @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'   ; AllocationUnitSize = 4KB }
+    )
     ADS        = @{
       DomainName        = 'contoso.com'
       DomainNetBIOSName = 'CONTOSO'

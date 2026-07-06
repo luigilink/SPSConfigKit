@@ -378,6 +378,33 @@ try {
         ManagedRuntimeVersion = 'v4.0'
         AutoStart             = $true
       }
+
+      # Publish the SoftwarePackages SMB share every node copies binaries and
+      # certificates from. The share name is the last segment of
+      # NonNodeData.SourcePath and the local folder lives on the Data drive, so
+      # the share is declared once. Read access defaults to 'Authenticated Users'
+      # and can be overridden with NonNodeData.SoftwarePackagesShare.ReadAccess.
+      $spShareName = ($ConfigurationData.NonNodeData.SourcePath.TrimEnd('\') -split '\\')[-1]
+      $spSharePath = Join-Path -Path $ConfigurationData.NonNodeData.Drives.Data -ChildPath $spShareName
+      $spReadAccess = if ($ConfigurationData.NonNodeData.SoftwarePackagesShare -and $ConfigurationData.NonNodeData.SoftwarePackagesShare.ReadAccess) {
+        @($ConfigurationData.NonNodeData.SoftwarePackagesShare.ReadAccess)
+      }
+      else {
+        @('Authenticated Users')
+      }
+      $spReadAccessLiteral = "'" + ($spReadAccess -join "','") + "'"
+
+      File PULLSERVER_SoftwarePackagesFolder {
+        Ensure          = 'Present'
+        Type            = 'Directory'
+        DestinationPath = $spSharePath
+      }
+      Script PULLSERVER_SoftwarePackagesShare {
+        DependsOn  = '[File]PULLSERVER_SoftwarePackagesFolder'
+        GetScript  = "@{ Result = (Get-SmbShare -Name '$spShareName' -ErrorAction SilentlyContinue).Path }"
+        TestScript = "`$s = Get-SmbShare -Name '$spShareName' -ErrorAction SilentlyContinue; (`$null -ne `$s) -and (`$s.Path -eq '$spSharePath')"
+        SetScript  = "`$s = Get-SmbShare -Name '$spShareName' -ErrorAction SilentlyContinue; if (`$s -and `$s.Path -ne '$spSharePath') { Remove-SmbShare -Name '$spShareName' -Force }; if (-not (Get-SmbShare -Name '$spShareName' -ErrorAction SilentlyContinue)) { New-SmbShare -Name '$spShareName' -Path '$spSharePath' -FullAccess 'BUILTIN\Administrators' -ReadAccess $spReadAccessLiteral | Out-Null }"
+      }
     }
   }
   #Run the CfgAppPull configuration with the provided ConfigurationData

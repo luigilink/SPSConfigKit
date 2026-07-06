@@ -169,6 +169,50 @@ function ConvertFrom-DscStatusData {
   }
 }
 
+function Format-DscTimestamp {
+  <#
+    Render a report timestamp, treating the OLE-automation sentinel date
+    (1899-12-30, i.e. DateTime "zero") and any pre-2000 value as "no report yet"
+    rather than printing a confusing 1899 date. Returns '—' in that case.
+  #>
+  param($Value, [string] $Format = 'yyyy-MM-dd HH:mm')
+  if ($null -eq $Value) { return '—' }
+  try {
+    $dt = [DateTime]$Value
+    if ($dt.Year -lt 2000) { return '—' }
+    return $dt.ToString($Format)
+  }
+  catch { return '—' }
+}
+
+function Format-DscError {
+  <#
+    A StatusReport Errors entry is a JSON-encoded object such as
+    {"Locale":"en-US","ErrorCode":"11","ErrorMessage":"...\u0027...","ErrorSource":"DSCEngine"}.
+    Extract the human-readable ErrorMessage (ConvertFrom-Json also decodes the
+    \uXXXX escapes). Fall back to Regex.Unescape on the raw string when the entry
+    is not JSON, so the banner never shows raw \u0027 / JSON noise.
+  #>
+  param($ErrorEntry)
+  if ($null -eq $ErrorEntry) { return '' }
+  $text = [string]$ErrorEntry
+  if ([string]::IsNullOrWhiteSpace($text)) { return '' }
+  try {
+    $obj = $text | ConvertFrom-Json -ErrorAction Stop
+    if ($obj -and $obj.PSObject.Properties.Name -contains 'ErrorMessage' -and -not [string]::IsNullOrWhiteSpace($obj.ErrorMessage)) {
+      $msg = [string]$obj.ErrorMessage
+      if ($obj.PSObject.Properties.Name -contains 'ErrorCode' -and -not [string]::IsNullOrWhiteSpace([string]$obj.ErrorCode)) {
+        return ("[{0}] {1}" -f $obj.ErrorCode, $msg)
+      }
+      return $msg
+    }
+  }
+  catch {
+    # Not JSON — fall through to a best-effort unescape of the raw string.
+  }
+  try { return [System.Text.RegularExpressions.Regex]::Unescape($text) } catch { return $text }
+}
+
 function Invoke-DscPullApi {
   param([System.String] $Uri)
   $headers = @{ Accept = 'application/json'; ProtocolVersion = '2.0' }
@@ -296,7 +340,7 @@ function ConvertTo-NodeCompliance {
   if ($latest) {
     $lastSeen = $latest.EndTime
     $configVersion = [string]$latest.ConfigurationVersion
-    $errors = @($latest.Errors | Where-Object { $_ })
+    $errors = @($latest.Errors | Where-Object { $_ } | ForEach-Object { Format-DscError $_ } | Where-Object { $_ })
     $sd = ConvertFrom-DscStatusData -StatusData $latest.StatusData
 
     if ($sd) {
@@ -426,7 +470,7 @@ function ConvertTo-DashboardHtml {
       }, NodeName)) {
     $meta = $stateMeta[$n.ComplianceState]
     if (-not $meta) { $meta = $stateMeta['Unknown'] }
-    $lastSeenTxt = if ($n.LastSeen) { ([DateTime]$n.LastSeen).ToString('yyyy-MM-dd HH:mm') } else { '—' }
+    $lastSeenTxt = Format-DscTimestamp $n.LastSeen 'yyyy-MM-dd HH:mm'
     $driftTxt = if ($n.ComplianceState -eq 'Unresponsive') { '—' } else { "$($n.ResourcesNotInDesired) / $($n.TotalResources)" }
     $anchor = 'node-' + ($n.AgentId -replace '[^A-Za-z0-9]', '')
 
@@ -477,7 +521,7 @@ function ConvertTo-DashboardHtml {
       <div class="node-body">
         <div class="kv">
           <div><span class="k">Configuration</span><span class="v mono">$(ConvertTo-HtmlText $n.ConfigurationName) $(ConvertTo-HtmlText ([string]$n.ConfigurationVersion))</span></div>
-          <div><span class="k">Last report</span><span class="v mono">$(if ($n.LastSeen) { ([DateTime]$n.LastSeen).ToString('yyyy-MM-dd HH:mm:ss') } else { '—' })</span></div>
+          <div><span class="k">Last report</span><span class="v mono">$(Format-DscTimestamp $n.LastSeen 'yyyy-MM-dd HH:mm:ss')</span></div>
           <div><span class="k">Run duration</span><span class="v mono">$(if ($n.DurationInSeconds) { "$($n.DurationInSeconds)s" } else { '—' })</span></div>
           <div><span class="k">Resources</span><span class="v">$($n.ResourcesInDesired) in state, $($n.ResourcesNotInDesired) drifted</span></div>
         </div>

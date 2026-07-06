@@ -44,6 +44,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CfgAppSql no longer creates a duplicate SqlLogin for the FARM account (#24)
+  - When the farm account is also a SQL sysadmin (the default posture), the
+    `SQLSysAdministrators` loop and the separate `MIDDLEWARE_SqlLogin_FARM` block
+    created two `SqlLogin` resources for the same login, which DSC rejected with
+    "conflicting values of PsDscRunAsCredential". The FARM login is now created
+    only when it is not already in `SQLSysAdministrators`, and the dependent
+    dbcreator / securityadmin `SqlRole` grants point at whichever login exists.
 - PDC `WaitForADDomain` no longer loops after a new-forest promotion (#17)
   - Removed `Credential = $ADSETUP` / `WaitForValidCredentials = $true` from
     `WaitForADDomain WaitForDCReady`: on the DC itself (running as SYSTEM) that

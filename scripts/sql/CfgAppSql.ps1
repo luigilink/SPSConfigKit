@@ -330,18 +330,32 @@ try {
         ServerRoleName       = 'sysadmin'
         MembersToInclude     = $Node.SQLSysAdministrators
       }
-      #Add the farm service account to the dbcreator and securityadmin roles
-      SqlLogin MIDDLEWARE_SqlLogin_FARM {
-        DependsOn            = $dependsOnSQLSetup
-        Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
-        Name                 = "$($FARM.UserName)"
-        LoginType            = 'WindowsUser'
-        ServerName           = $Node.NodeName
-        InstanceName         = $sqlSPInstance
+      #Add the farm service account to the dbcreator and securityadmin roles.
+      # The FARM login may already have been created by the SQLSysAdministrators
+      # loop above (when the farm account is also a SQL sysadmin, the default
+      # posture). Creating it again here would produce two SqlLogin resources for
+      # the same login, which DSC rejects ("conflicting values of
+      # PsDscRunAsCredential"). So create MIDDLEWARE_SqlLogin_FARM only when the
+      # farm account is NOT in SQLSysAdministrators, and point the role grants at
+      # whichever SqlLogin resource actually exists.
+      $farmIsSysAdmin = @($Node.SQLSysAdministrators) -contains $FARM.UserName
+      if ($farmIsSysAdmin) {
+        $farmLoginDependsOn = '[SqlLogin]MIDDLEWARE_SqlLogin_' + $FARM.UserName.Replace('\', '-')
+      }
+      else {
+        $farmLoginDependsOn = '[SqlLogin]MIDDLEWARE_SqlLogin_FARM'
+        SqlLogin MIDDLEWARE_SqlLogin_FARM {
+          DependsOn            = $dependsOnSQLSetup
+          Ensure               = 'Present'
+          PsDscRunAsCredential = $ADSETUP
+          Name                 = "$($FARM.UserName)"
+          LoginType            = 'WindowsUser'
+          ServerName           = $Node.NodeName
+          InstanceName         = $sqlSPInstance
+        }
       }
       SqlRole MIDDLEWARE_SqlSpsServerRoleADMdbcreator {
-        DependsOn            = '[SqlLogin]MIDDLEWARE_SqlLogin_FARM'
+        DependsOn            = $farmLoginDependsOn
         Ensure               = 'Present'
         PsDscRunAsCredential = $ADSETUP
         ServerName           = $Node.NodeName
@@ -350,7 +364,7 @@ try {
         MembersToInclude     = "$($FARM.UserName)"
       }
       SqlRole MIDDLEWARE_SqlSpsServerRoleADMsecurityadmin {
-        DependsOn            = '[SqlLogin]MIDDLEWARE_SqlLogin_FARM'
+        DependsOn            = $farmLoginDependsOn
         Ensure               = 'Present'
         PsDscRunAsCredential = $ADSETUP
         ServerName           = $Node.NodeName

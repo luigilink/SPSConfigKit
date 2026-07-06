@@ -91,22 +91,6 @@ try {
     throw "Missing $inputFile"
   }
 
-  # DRY: derive certificate paths from the single share root (NonNodeData.SourcePath)
-  # + each entry's CerFileName / PfxFileName, so the share host is defined only once.
-  # An explicit CertPath / PfxPath on an entry is still honoured (backward compatible).
-  $certSourcePath = $configurationData.NonNodeData.SourcePath
-  if ($configurationData.NonNodeData.ADC -and $configurationData.NonNodeData.ADC.certificates) {
-    foreach ($cert in $configurationData.NonNodeData.ADC.certificates) {
-      $certRoot = $certSourcePath.TrimEnd('\\')
-      if ([string]::IsNullOrWhiteSpace($cert.CertPath) -and -not [string]::IsNullOrWhiteSpace($cert.CerFileName)) {
-        $cert.CertPath = '{0}\{1}' -f $certRoot, $cert.CerFileName
-      }
-      if ([string]::IsNullOrWhiteSpace($cert.PfxPath) -and -not [string]::IsNullOrWhiteSpace($cert.PfxFileName)) {
-        $cert.PfxPath = '{0}\{1}' -f $certRoot, $cert.PfxFileName
-      }
-    }
-  }
-
   # DRY: derive the semantic Drives hashtable (Data/Logs/Temp -> letter) from the
   # authoritative NonNodeData.Disks list, so a drive letter is declared only once.
   # Temp falls back to the Data drive when no dedicated Temp disk is declared.
@@ -122,6 +106,32 @@ try {
     if ($byType.Logs) { $drives.Logs = $byType.Logs }
     $drives.Temp = if ($byType.Temp) { $byType.Temp } elseif ($byType.Data) { $byType.Data } else { $null }
     $configurationData.NonNodeData.Drives = $drives
+  }
+
+  # DRY: derive certificate paths from the LOCAL SoftwarePackages folder, NOT from
+  # NonNodeData.SourcePath. The pull server is the host of that share, so it must
+  # read its own .cer / .pfx locally: reaching them over its own UNC (\\PULL\...)
+  # is a chicken-and-egg (the share is published by this very MOF, so it does not
+  # exist at the first apply) and is pointless anyway. The local root is the Data
+  # drive + the last segment of SourcePath (e.g. F:\Softwarepackages). An explicit
+  # CertPath / PfxPath on an entry is still honoured (backward compatible).
+  $shareLeaf = ($configurationData.NonNodeData.SourcePath.TrimEnd('\') -split '\\')[-1]
+  $certRoot = if ($configurationData.NonNodeData.Drives -and $configurationData.NonNodeData.Drives.Data) {
+    '{0}\{1}' -f $configurationData.NonNodeData.Drives.Data, $shareLeaf
+  }
+  else {
+    # Fallback to the UNC share root if no Data drive could be derived.
+    $configurationData.NonNodeData.SourcePath.TrimEnd('\')
+  }
+  if ($configurationData.NonNodeData.ADC -and $configurationData.NonNodeData.ADC.certificates) {
+    foreach ($cert in $configurationData.NonNodeData.ADC.certificates) {
+      if ([string]::IsNullOrWhiteSpace($cert.CertPath) -and -not [string]::IsNullOrWhiteSpace($cert.CerFileName)) {
+        $cert.CertPath = '{0}\{1}' -f $certRoot, $cert.CerFileName
+      }
+      if ([string]::IsNullOrWhiteSpace($cert.PfxPath) -and -not [string]::IsNullOrWhiteSpace($cert.PfxFileName)) {
+        $cert.PfxPath = '{0}\{1}' -f $certRoot, $cert.PfxFileName
+      }
+    }
   }
 
   if ([string]::IsNullOrWhiteSpace($secretsFile)) {

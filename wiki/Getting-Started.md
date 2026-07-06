@@ -171,6 +171,24 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    `Cert:\LocalMachine\My`. The Chocolatey and `Install-Module` phases are
    skipped automatically if the node has no outbound internet.
 
+   > [!NOTE]
+   > **Cloud / Azure nodes** — a freshly provisioned VM points at the platform
+   > DNS (Azure uses 168.63.129.16), so it cannot resolve or join your domain.
+   > Run the optional helper **on each member node** (not the PDC) to set the
+   > DNS to your domain controller and join the domain before applying the
+   > node's configuration:
+   >
+   > ```powershell
+   > .\scripts\init\Add-DscNodeToDomain.ps1
+   > ```
+   >
+   > Configure `scripts\init\Add-DscNodeToDomain.psd1` first (`DomainName`,
+   > `DnsServers` = your DC IP(s), optional `OUPath`, `JoinAccount` =
+   > `ADSETUP`). The script is idempotent — it skips when the node is already a
+   > member — and reboots when `Restart = $true`. On-prem / VMware nodes whose
+   > DNS already resolves the domain don't need it (leave `DnsServers = @()` to
+   > join without changing DNS, or skip the script entirely).
+
 5. **Fill in `scripts/Secrets.psd1`** with the AD service accounts, the
    farm passphrase, the DSRM password, and the PFX passwords for every
    certificate referenced by your configuration. See the

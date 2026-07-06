@@ -1,46 +1,56 @@
 # SPSConfigKit - Release Notes
 
-## [1.4.0] - 2026-07-06
+## [1.5.0] - 2026-07-06
 
 ### Added
 
-- Automatic data-disk initialisation during node bootstrap (#15)
-  - New `scripts/init/Initialize-DscDisks.ps1` prepares a node's data disks from
-    the same `NonNodeData.Disks` block the configuration uses (read via
-    `-ConfigPath`). It onlines each raw non-`OS` disk, applies a GPT partition,
-    NTFS-formats it with the requested `FSLabel` / `AllocationUnitSize` and
-    assigns the drive letter — so a brand-new farm has its volumes before
-    anything writes to them, with no manual `Get-Disk` / `Format-Volume` step.
-    Disk preparation is a one-time node-prep action, so it runs during bootstrap
-    (like the domain join and module install) rather than inside the recurring
-    application MOF. The script uses native Windows Storage cmdlets (no extra DSC
-    module), is idempotent, and is **non-destructive** — a disk already carrying
-    data is reported and left intact, never reformatted.
-  - Every configuration (`CfgAppSql` / `CfgAppSps` / `CfgAppPdc` / `CfgAppPull`)
-    declares its physical disks in a new authoritative `NonNodeData.Disks` array
-    (`Id` / `Letter` / `Type` / `FSLabel` / `AllocationUnitSize`). Disks are keyed
-    by disk **Number** (`Get-Disk`), portable across bare-metal, VMware, Hyper-V
-    and Azure — not an Azure LUN. The `OS` disk (`Type = 'OS'`) is never touched.
-  - New `NonNodeData.ManageDisks` boolean (default `$true`). Set it to `$false`
-    when the customer manages their own storage: `Initialize-DscDisks.ps1` then
-    does nothing, but the derived `Drives` hashtable is still produced so every
-    path resolves.
+- Optional domain-join helper for cloud nodes (#18)
+  - New `scripts/init/Add-DscNodeToDomain.ps1` (+ `.psd1`) points a node's DNS at
+    the domain controller and joins it to Active Directory before the node's DSC
+    configuration is applied. A freshly provisioned cloud VM (e.g. Azure, whose
+    default DNS is 168.63.129.16) cannot otherwise resolve or join the domain.
+    The helper is idempotent (skips when already a member), sets DNS only when
+    `DnsServers` is provided (on-prem nodes with working DNS leave it `@()`),
+    waits for the domain LDAP SRV record, joins with the `Secrets.psd1`
+    `JoinAccount` credential (`ADSETUP` by default) honouring an optional
+    `OUPath`, and restarts after a readable countdown (`RestartDelaySec`).
+- The pull server now publishes the SoftwarePackages SMB share (#19)
+  - `CfgAppPull.ps1` creates `<Drives.Data>\SoftwarePackages` and publishes it as
+    the SMB share named after the last segment of `NonNodeData.SourcePath`
+    (native `New-SmbShare`, no new DSC module, idempotent). A new optional
+    `NonNodeData.SoftwarePackagesShare.ReadAccess` list (default
+    `'Authenticated Users'`) lets production lock the share down. Nodes no longer
+    need the share created by hand before they can pull binaries.
 
 ### Changed
 
-- `NonNodeData.Drives` is now DERIVED, not hand-written (#15)
-  - Each `Cfg*.ps1` builds `NonNodeData.Drives = @{ Data; Logs; Temp }` from the
-    new `Disks` array (keyed by `Type`) immediately after loading the psd1, so a
-    drive letter is declared exactly once (in `Disks`) instead of duplicated.
-    All existing `Drives.Data` / `Drives.Logs` / `Drives.Temp` consumers keep
-    working unchanged; `Temp` falls back to the `Data` letter when no dedicated
-    `Temp` disk is declared. FSLabels follow an UPPERCASE convention
-    (`SYSTEM` / `DATA` / `LOGS` / `TEMP`), and every tier declares at least the
-    three baseline disks. SQL `DATA` / `LOGS` volumes use a `64KB` allocation
-    unit size per SQL Server best practice.
-  - `ConfigData.Tests.ps1` derives `Drives` from `Disks` the same way and adds a
-    `NonNodeData Disks` check block (required per-disk keys, one `OS` disk,
-    unique `Id`s and `Letter`s, `SYSTEM` / `DATA` / `LOGS` present).
+- Faster software-package downloads (#16)
+  - `Initialize-SoftwarePackages.ps1` sets `$ProgressPreference = 'SilentlyContinue'`
+    (the Invoke-WebRequest progress bar made multi-GB downloads an order of
+    magnitude slower on Windows PowerShell 5.1) and adds an `Invoke-SPSDownload`
+    helper that prefers `Start-BitsTransfer` (resumable, faster) and falls back to
+    `Invoke-WebRequest` when BITS is unavailable.
+
+### Fixed
+
+- PDC `WaitForADDomain` no longer loops after a new-forest promotion (#17)
+  - Removed `Credential = $ADSETUP` / `WaitForValidCredentials = $true` from
+    `WaitForADDomain WaitForDCReady`: on the DC itself (running as SYSTEM) that
+    impersonated a domain account this configuration has not created yet, so the
+    resource never found the DC and looped `WaitTimeout` × `RestartCount`.
+- Pull server MOF can now be applied when document encryption is enabled (#20)
+  - Added `CertificateID = $Node.Thumbprint` to the pull server's
+    `LocalConfigurationManager` block (matching SQL/SPS/PDC), so the LCM can
+    decrypt the encrypted MOF instead of failing with "The Local Configuration
+    Manager is not configured with a certificate". The pull quick-start now also
+    documents the `Set-DscLocalConfigurationManager` meta-config step.
+- Pull server resolves its own certificate paths locally (#22)
+  - `CfgAppPull.ps1` derives the `DscPull` `.cer` / `.pfx` paths from the local
+    Data drive (`<Drives.Data>\<share leaf>`, e.g. `F:\SoftwarePackages`) instead
+    of its own UNC share, removing a chicken-and-egg (the share is published by
+    the same MOF, so the UNC did not resolve at first apply and `xDscWebService`
+    failed on the `0000…` sentinel thumbprint). The other configurations keep
+    reading from the UNC share.
 
 ## Changelog
 

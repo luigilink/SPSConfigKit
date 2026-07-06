@@ -65,7 +65,7 @@
   # Dry-run: show what would happen without changing any disk
   .\Initialize-DscDisks.ps1 -ConfigPath ..\sql\CfgAppSql.psd1 -WhatIf
 #>
-[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
 param(
     [Parameter(Mandatory = $true)]
     [System.String]

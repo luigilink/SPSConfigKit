@@ -145,7 +145,7 @@
       # SourcePath                  = '\\PULL\Softwarepackages\OOS'
       # DestinationPath             = 'F:\SoftwarePackages\OOS'
       # Subfolders                  = @{ Binaries = 'BIN'; LanguagePack = 'LP'; CumulativeUpdate = 'CU' }
-      CUFileName                  = 'wacserver2019-kb5002752-fullfile-x64-glb.exe'
+      CUFileName                  = 'wacserver2019-kb5002871-fullfile-x64-glb.exe'
       URL                         = 'oosweb.contoso.com'
       CertFriendlyName            = 'OOSCertSSL'
       LogLocation                 = 'LOGS\OOS'
@@ -173,7 +173,7 @@
       LanguagePacks             = @('fr-fr')
       # CU package: either an absolute path (used as-is, current default) or a relative path
       # resolved under <DestinationPath>\<Subfolders.CumulativeUpdate>.
-      UberCumulativeUpdate      = '\\PULL\Softwarepackages\SPS\CU\uber-subscription-kb5002773-fullfile-x64-glb.exe'
+      UberCumulativeUpdate      = '\\PULL\Softwarepackages\SPS\CU\uber-subscription-kb5002863-fullfile-x64-glb.exe'
       FarmConfigDatabaseName    = 'DSPS_Admin_Config'
       AdminContentDatabaseName  = 'DSPS_Admin_Content'
       CentralAdministrationPort = '5555'

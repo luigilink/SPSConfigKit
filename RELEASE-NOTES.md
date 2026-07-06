@@ -1,27 +1,30 @@
 # SPSConfigKit - Release Notes
 
-## [1.4.0] - 2026-07-03
+## [1.4.0] - 2026-07-06
 
 ### Added
 
-- Automatic data-disk initialisation on first boot (#15)
+- Automatic data-disk initialisation during node bootstrap (#15)
+  - New `scripts/init/Initialize-DscDisks.ps1` prepares a node's data disks from
+    the same `NonNodeData.Disks` block the configuration uses (read via
+    `-ConfigPath`). It onlines each raw non-`OS` disk, applies a GPT partition,
+    NTFS-formats it with the requested `FSLabel` / `AllocationUnitSize` and
+    assigns the drive letter — so a brand-new farm has its volumes before
+    anything writes to them, with no manual `Get-Disk` / `Format-Volume` step.
+    Disk preparation is a one-time node-prep action, so it runs during bootstrap
+    (like the domain join and module install) rather than inside the recurring
+    application MOF. The script uses native Windows Storage cmdlets (no extra DSC
+    module), is idempotent, and is **non-destructive** — a disk already carrying
+    data is reported and left intact, never reformatted.
   - Every configuration (`CfgAppSql` / `CfgAppSps` / `CfgAppPdc` / `CfgAppPull`)
-    now declares its physical disks in a new authoritative `NonNodeData.Disks`
-    array (`Id` / `Letter` / `Type` / `FSLabel` / `AllocationUnitSize`) and emits
-    StorageDsc `WaitForDisk` + `Disk` resources so a brand-new farm onlines,
-    GPT-partitions, NTFS-formats and letters its raw data disks automatically —
-    no manual `Get-Disk` / `Format-Volume` step before the first apply. Disks are
-    keyed by disk **Number** (StorageDsc's default `DiskIdType`), portable across
-    bare-metal, VMware, Hyper-V and Azure — not an Azure LUN. The `OS` disk
-    (`Type = 'OS'`) is never touched.
-  - `StorageDsc` `6.0.1` is pinned in `scripts/init/Initialize-DscNode.psd1` (so
-    `Initialize-DscNode.ps1` installs it and `Publish-SPSPullModules.ps1` stages
-    it on the pull server) and imported by each `Cfg*.ps1`.
-  - New `NonNodeData.ManageDisks` boolean (default `$true`) gates the disk
-    resources. Set it to `$false` when the customer manages their own storage:
-    the `WaitForDisk` / `Disk` resources are skipped, but the derived `Drives`
-    hashtable is still produced so every path resolves. `AllowDestructive` stays
-    at its safe default (`$false`), so an already-correct disk is left intact.
+    declares its physical disks in a new authoritative `NonNodeData.Disks` array
+    (`Id` / `Letter` / `Type` / `FSLabel` / `AllocationUnitSize`). Disks are keyed
+    by disk **Number** (`Get-Disk`), portable across bare-metal, VMware, Hyper-V
+    and Azure — not an Azure LUN. The `OS` disk (`Type = 'OS'`) is never touched.
+  - New `NonNodeData.ManageDisks` boolean (default `$true`). Set it to `$false`
+    when the customer manages their own storage: `Initialize-DscDisks.ps1` then
+    does nothing, but the derived `Drives` hashtable is still produced so every
+    path resolves.
 
 ### Changed
 

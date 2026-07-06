@@ -21,6 +21,14 @@
     `NonNodeData.SoftwarePackagesShare.ReadAccess` list (default
     `'Authenticated Users'`) lets production lock the share down. Nodes no longer
     need the share created by hand before they can pull binaries.
+- Dashboard `-Action Install` provisions the node manifest share (#23)
+  - `SPSDscDashboard.ps1 -Action Install` now creates the `NodeManifestPath`
+    folder and publishes it as an SMB share (member nodes write their
+    `<NodeName>.json` there at LCM registration via `CfgLcmPull.ps1
+    -NodeManifestPath`). Name and write access come from an optional
+    `NodeManifestShare` block in `SPSDscDashboard.psd1` (default share name = the
+    folder leaf, default `ChangeAccess = 'Authenticated Users'`). A UNC
+    `NodeManifestPath` is left untouched. `-Action Default` is unchanged.
 
 ### Changed
 

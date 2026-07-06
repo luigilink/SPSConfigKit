@@ -25,7 +25,7 @@
     SourcePath  = '\\PULL\Softwarepackages'
     # Set to $false when the customer manages storage themselves. Default $true.
     ManageDisks = $true
-    # Data disks to initialise on first boot (StorageDsc, keyed by disk Number).
+    # Data disks, initialised by scripts/init/Initialize-DscDisks.ps1 (keyed by disk Number).
     # Drives.{Data,Logs} letters are DERIVED from this by Type. Best practice: at
     # least 3 disks (SYSTEM/DATA/LOGS). Disk numbers are environment-specific:
     #   a plain VM is usually 0=OS, 1=Data, 2=Logs; an Azure VM WITH a temp disk

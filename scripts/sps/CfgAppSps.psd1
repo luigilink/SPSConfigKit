@@ -62,7 +62,7 @@
     DomainName  = 'contoso.com'
     # Set to $false when the customer manages storage themselves. Default $true.
     ManageDisks = $true
-    # Data disks to initialise on first boot (StorageDsc, keyed by disk Number).
+    # Data disks, initialised by scripts/init/Initialize-DscDisks.ps1 (keyed by disk Number).
     # Drives.{Data,Logs} letters consumed elsewhere are DERIVED from this by Type.
     # NOTE: disk numbers are environment-specific. A plain VM is usually
     #   0=OS, 1=Data, 2=Logs; an Azure VM WITH a temp disk shifts to

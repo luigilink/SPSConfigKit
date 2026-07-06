@@ -176,7 +176,6 @@ try {
     Import-DscResource -ModuleName CertificateDsc -ModuleVersion 6.0.0
     Import-DscResource -ModuleName ComputerManagementDsc -ModuleVersion 10.0.0
     Import-DscResource -ModuleName PSDscResources -ModuleVersion 2.12.0.0
-    Import-DscResource -ModuleName StorageDsc -ModuleVersion 6.0.1
 
     #For All servers
     Node $AllNodes.Nodename {
@@ -191,29 +190,6 @@ try {
         CertificateID      = $Node.Thumbprint
       }
 
-      #Initialise the data disks (online -> GPT -> NTFS -> drive letter) before
-      #anything writes to them. Keyed by disk Number (StorageDsc default), driven
-      #by NonNodeData.Disks; the OS disk (Type 'OS') is never touched. Skipped when
-      #NonNodeData.ManageDisks is $false (customer manages their own storage).
-      if ($ConfigurationData.NonNodeData.ManageDisks -ne $false) {
-        foreach ($disk in ($ConfigurationData.NonNodeData.Disks | Where-Object { $_.Type -ne 'OS' })) {
-          WaitForDisk "WaitForDisk_$($disk.Letter)" {
-            DiskId           = $disk.Id
-            DiskIdType       = 'Number'
-            RetryIntervalSec = 20
-            RetryCount       = 30
-          }
-          Disk "Disk_$($disk.Letter)" {
-            DiskId             = $disk.Id
-            DiskIdType         = 'Number'
-            DriveLetter        = $disk.Letter
-            FSFormat           = 'NTFS'
-            FSLabel            = $disk.FSLabel
-            AllocationUnitSize = $disk.AllocationUnitSize
-            DependsOn          = "[WaitForDisk]WaitForDisk_$($disk.Letter)"
-          }
-        }
-      }
       #Create the SoftwarePackages folder
       File APPLICATION_SpsAddSoftwarePackages {
         Ensure          = 'Present'

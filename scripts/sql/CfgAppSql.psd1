@@ -23,7 +23,7 @@
     # but the Drives.{Data,Logs,Temp} letters are still derived from Disks below,
     # so the rest of the configuration keeps working. Default $true.
     ManageDisks = $true
-    # Data disks to initialise on first boot (StorageDsc, keyed by disk Number).
+    # Data disks, initialised by scripts/init/Initialize-DscDisks.ps1 (keyed by disk Number).
     # The Drives.{Data,Logs,Temp} letters consumed elsewhere are DERIVED from this
     # list by Type, so a drive letter is declared only once.
     #   Id     : Windows disk NUMBER (see 'Get-Disk' on the node). NOT the LUN.

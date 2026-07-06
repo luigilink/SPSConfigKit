@@ -294,7 +294,7 @@ Describe 'NonNodeData common' {
 }
 
 # ===========================================================================
-# 3b. Disks — the authoritative data-disk list DSC initialises (StorageDsc)
+# 3b. Disks — the authoritative data-disk list Initialize-DscDisks.ps1 consumes
 # ===========================================================================
 Describe 'NonNodeData Disks' {
   It 'declares a NonNodeData.Disks list' {

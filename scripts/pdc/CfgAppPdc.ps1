@@ -307,13 +307,18 @@ try {
         DependsOn = '[ADDomain]SYSTEM_ADS_CreateADForest'
       }
       #Wait for the Domain Controller to be ready
+      # Runs on the DC itself right after promotion, as SYSTEM (already a domain
+      # principal), so it validates the domain in the local computer context. Do
+      # NOT pass a Credential here: that parameter is for a member/replica server
+      # waiting for a REMOTE domain, and impersonating a domain service account
+      # that this very configuration has not created yet (the ADUser resources
+      # below DependOn this one) deadlocks with "user name or password is
+      # incorrect" and loops WaitTimeout x RestartCount before failing.
       WaitForADDomain WaitForDCReady {
-        DomainName              = $ConfigurationData.NonNodeData.ADS.DomainName
-        WaitTimeout             = 300
-        RestartCount            = 3
-        Credential              = $ADSETUP
-        WaitForValidCredentials = $true
-        DependsOn               = '[PendingReboot]RebootOnSignalFromCreateADForest'
+        DomainName   = $ConfigurationData.NonNodeData.ADS.DomainName
+        WaitTimeout  = 300
+        RestartCount = 3
+        DependsOn    = '[PendingReboot]RebootOnSignalFromCreateADForest'
       }
       # Edge browser policies are optional and gated by $Node.ApplyEdgePolicies.
       # The OU / service-account / user-account provisioning further down is gated

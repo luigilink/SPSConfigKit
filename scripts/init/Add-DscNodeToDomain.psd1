@@ -26,4 +26,9 @@
   # domain membership before the node's DSC configuration is applied. Set to
   # $false to reboot manually / orchestrate the restart yourself.
   Restart     = $true
+
+  # Seconds to wait before the automatic restart (a readable countdown, so the
+  # join result can be seen before the reboot). Ignored when Restart = $false.
+  # Set to 0 to restart immediately.
+  RestartDelaySec = 15
 }

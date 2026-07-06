@@ -104,6 +104,7 @@ if ([string]::IsNullOrWhiteSpace($domainName)) {
 [System.String] $ouPath = $configurationData.OUPath
 [System.String] $joinAccountName = if ([string]::IsNullOrWhiteSpace($configurationData.JoinAccount)) { 'ADSETUP' } else { $configurationData.JoinAccount }
 [System.Boolean] $restart = if ($null -eq $configurationData.Restart) { $true } else { [System.Boolean] $configurationData.Restart }
+[System.Int32] $restartDelaySec = if ($null -eq $configurationData.RestartDelaySec) { 15 } else { [System.Int32] $configurationData.RestartDelaySec }
 
 # Idempotency: bail out early when the node is already in the target domain.
 $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
@@ -182,7 +183,9 @@ if (-not $domainReady) {
 
 # Join the domain. -Force suppresses the confirmation prompt; the OUPath is
 # passed only when supplied so the computer object lands in the default
-# Computers container otherwise.
+# Computers container otherwise. The restart is intentionally NOT delegated to
+# Add-Computer -Restart (which reboots instantly, before the operator can read
+# the result); it is performed separately after a short, readable countdown.
 $addComputerParams = @{
     DomainName  = $domainName
     Credential  = $joinCredential
@@ -192,15 +195,22 @@ $addComputerParams = @{
 if (-not [string]::IsNullOrWhiteSpace($ouPath)) {
     $addComputerParams['OUPath'] = $ouPath
 }
-if ($restart) {
-    $addComputerParams['Restart'] = $true
-}
 
 Write-Host "Joining domain '$domainName' as '$($joinAccount.Username)'..."
 Add-Computer @addComputerParams
+Write-Host "Domain join succeeded: node is now a member of '$domainName'." -ForegroundColor Green
+
 if ($restart) {
-    Write-Host "Domain join requested; the node will restart to complete membership."
+    if ($restartDelaySec -gt 0) {
+        Write-Host "A restart is required to complete domain membership before applying the node's DSC configuration."
+        for ($remaining = $restartDelaySec; $remaining -gt 0; $remaining--) {
+            Write-Host "  Restarting in $remaining second(s)...  (press Ctrl+C to cancel and restart manually)"
+            Start-Sleep -Seconds 1
+        }
+    }
+    Write-Host 'Restarting now.'
+    Restart-Computer -Force
 }
 else {
-    Write-Host "Domain join complete. Restart the node manually before applying its DSC configuration."
+    Write-Host "Restart the node manually before applying its DSC configuration." -ForegroundColor Yellow
 }

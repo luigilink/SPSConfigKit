@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CfgAppSps CU references now match the package manifest (#28)
+  - The SharePoint (`UberCumulativeUpdate`) and OOS (`CUFileName`) cumulative
+    updates referenced by `CfgAppSps.psd1` pointed at older KBs than
+    `Initialize-SoftwarePackages.psd1` downloads, so a fresh farm's patch step
+    looked for a CU that was never fetched. Aligned to the downloaded CUs
+    (SharePoint `kb5002863`, OOS `kb5002871`).
 - Dashboard renders node errors and timestamps cleanly (#25)
   - Failed-node error banners showed raw report JSON with undecoded `\uXXXX`
     escapes; they now display the human-readable `ErrorMessage`. A node with no

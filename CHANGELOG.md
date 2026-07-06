@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     "conflicting values of PsDscRunAsCredential". The FARM login is now created
     only when it is not already in `SQLSysAdministrators`, and the dependent
     dbcreator / securityadmin `SqlRole` grants point at whichever login exists.
+- SQL configuration resources run under a SQL sysadmin account (#26)
+  - `SqlLogin` / `SqlRole` / `SqlMemory` / `SqlMaxDop` / `SqlProtocolTcpIP` ran
+    with `PsDscRunAsCredential = $ADSETUP`, which `SqlSetup` never grants sysadmin,
+    so every SQL resource failed with "Failed to connect to SQL instance"
+    (SQLCOMMON0019). They now run under `$SETUP` (a member of the default
+    `SQLSysAdministrators`, so a sysadmin from install).
 - PDC `WaitForADDomain` no longer loops after a new-forest promotion (#17)
   - Removed `Credential = $ADSETUP` / `WaitForValidCredentials = $true` from
     `WaitForADDomain WaitForDCReady`: on the DC itself (running as SYSTEM) that

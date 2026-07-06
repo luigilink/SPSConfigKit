@@ -75,6 +75,11 @@ param(
 # Clear the host console
 Clear-Host
 
+# Tolerate a path pasted with surrounding quotes or stray whitespace (a common
+# copy/paste / Bastion artefact that otherwise makes Test-Path look for a file
+# whose name literally contains a quote character).
+$ConfigPath = $ConfigPath.Trim().Trim('"', "'").Trim()
+
 if (-not (Test-Path -Path $ConfigPath)) {
     throw "Missing configuration file '$ConfigPath'. Point -ConfigPath at the node's Cfg*.psd1 (e.g. ..\pull\CfgAppPull.psd1)."
 }

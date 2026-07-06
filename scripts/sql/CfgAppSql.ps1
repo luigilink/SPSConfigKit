@@ -245,6 +245,15 @@ try {
       # When IsSQLSetup=$True, the override inside the if-block makes everything
       # wait for SqlSetup instead, preserving the install-then-configure ordering.
       $dependsOnSQLSetup = '[Service]SYSTEM_SvcTWerSvcDisableStopped'
+
+      # Credential the SQL-configuration resources (SqlLogin / SqlRole / SqlMemory
+      # / SqlMaxDop / SqlProtocolTcpIP) run under. With Windows authentication the
+      # effective SQL login is this RunAs account, so it MUST be a SQL sysadmin.
+      # SqlSetup grants sysadmin only to SQLSysAdminAccounts (= SQLSysAdministrators),
+      # so use $SETUP (svcspssetup), a member of that list. Do NOT use $ADSETUP here:
+      # it is not a SQL sysadmin, so it connects with no rights and every SqlXXX
+      # resource fails with 'Failed to connect to SQL instance'.
+      $sqlAdminCredential = $SETUP
       if ($Node.IsSQLSetup) {
         $dependsOnSQLSetup = '[SqlSetup]MIDDLEWARE_SqlMSSQLSERVER'
         SqlSetup MIDDLEWARE_SqlMSSQLSERVER {
@@ -281,7 +290,7 @@ try {
       if ($null -ne $sqlTcpPort) {
         SqlProtocolTcpIP MIDDLEWARE_SqlProtocolTcpIP {
           DependsOn            = $dependsOnSQLSetup
-          PsDscRunAsCredential = $ADSETUP
+          PsDscRunAsCredential = $sqlAdminCredential
           InstanceName         = $sqlSPInstance
           IpAddressGroup       = 'IPAll'
           TcpPort              = $sqlTcpPort
@@ -312,7 +321,7 @@ try {
       foreach ($sqlSysAdministrator in $Node.SQLSysAdministrators) {
         SqlLogin ('MIDDLEWARE_SqlLogin_' + $sqlSysAdministrator.Replace('\', '-')) {
           DependsOn            = $dependsOnSQLSetup
-          PsDscRunAsCredential = $ADSETUP
+          PsDscRunAsCredential = $sqlAdminCredential
           Ensure               = 'Present'
           Name                 = $sqlSysAdministrator
           LoginType            = 'WindowsUser'
@@ -324,7 +333,7 @@ try {
       SqlRole MIDDLEWARE_SqlSpsServerRole {
         DependsOn            = $dependsOnSQLSetup
         Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
+        PsDscRunAsCredential = $sqlAdminCredential
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance
         ServerRoleName       = 'sysadmin'
@@ -347,7 +356,7 @@ try {
         SqlLogin MIDDLEWARE_SqlLogin_FARM {
           DependsOn            = $dependsOnSQLSetup
           Ensure               = 'Present'
-          PsDscRunAsCredential = $ADSETUP
+          PsDscRunAsCredential = $sqlAdminCredential
           Name                 = "$($FARM.UserName)"
           LoginType            = 'WindowsUser'
           ServerName           = $Node.NodeName
@@ -357,7 +366,7 @@ try {
       SqlRole MIDDLEWARE_SqlSpsServerRoleADMdbcreator {
         DependsOn            = $farmLoginDependsOn
         Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
+        PsDscRunAsCredential = $sqlAdminCredential
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance
         ServerRoleName       = 'dbcreator'
@@ -366,7 +375,7 @@ try {
       SqlRole MIDDLEWARE_SqlSpsServerRoleADMsecurityadmin {
         DependsOn            = $farmLoginDependsOn
         Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
+        PsDscRunAsCredential = $sqlAdminCredential
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance
         ServerRoleName       = 'securityadmin'
@@ -377,7 +386,7 @@ try {
         SqlMemory MIDDLEWARE_SqlMaxMemory {
           DependsOn            = $dependsOnSQLSetup
           Ensure               = 'Present'
-          PsDscRunAsCredential = $ADSETUP
+          PsDscRunAsCredential = $sqlAdminCredential
           DynamicAlloc         = $true
           ServerName           = $Node.NodeName
           InstanceName         = $sqlSPInstance
@@ -387,7 +396,7 @@ try {
         SqlMemory MIDDLEWARE_SqlMaxMemory {
           DependsOn            = $dependsOnSQLSetup
           Ensure               = 'Present'
-          PsDscRunAsCredential = $ADSETUP
+          PsDscRunAsCredential = $sqlAdminCredential
           MaxMemory            = $Node.SQLMaxMemory
           ServerName           = $Node.NodeName
           InstanceName         = $sqlSPInstance
@@ -397,7 +406,7 @@ try {
       SqlMaxDop MIDDLEWARE_SqlMaxDopTo1 {
         DependsOn            = $dependsOnSQLSetup
         Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
+        PsDscRunAsCredential = $sqlAdminCredential
         DynamicAlloc         = $false
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance

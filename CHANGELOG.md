@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Dashboard renders node errors and timestamps cleanly (#25)
+  - Failed-node error banners showed raw report JSON with undecoded `\uXXXX`
+    escapes; they now display the human-readable `ErrorMessage`. A node with no
+    valid report yet (e.g. mid `Update-DscConfiguration`) showed the sentinel
+    date `1899-12-30`; it now renders `—`.
 - CfgAppSql no longer creates a duplicate SqlLogin for the FARM account (#24)
   - When the farm account is also a SQL sysadmin (the default posture), the
     `SQLSysAdministrators` loop and the separate `MIDDLEWARE_SqlLogin_FARM` block

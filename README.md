@@ -33,6 +33,7 @@ This is the list of DSC Modules required for this kit:
 - PSDscResources
 - SharePointDsc
 - SqlServerDsc
+- StorageDsc
 - WebAdministrationDsc
 - xCredSSP
 - xPSDesiredStateConfiguration

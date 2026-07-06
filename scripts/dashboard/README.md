@@ -67,6 +67,15 @@ manifest folder (`-NodeManifestPath`). The dashboard reads that folder to discov
 the nodes, then queries the supported keyed endpoint
 `Nodes(AgentId='…')/Reports` for each — no lock, no downtime.
 
+Because member nodes write their `<NodeName>.json` to that folder remotely, it
+must be an SMB share. **`-Action Install` provisions it for you**: when
+`NodeManifestPath` is a local path, Install creates the folder and publishes it
+as a share (name and write-access from the optional `NodeManifestShare` block in
+the psd1 — default share name = the folder leaf, default write access =
+`Authenticated Users` so domain computers can publish). Point each node's
+`CfgLcmPull.ps1 -NodeManifestPath` at the resulting `\\<pull>\<share>`. A UNC
+`NodeManifestPath` is assumed hosted elsewhere and is left untouched.
+
 ## Usage
 
 The script has just three parameters — `-Action`, `-InstallAccount`, `-InputFile`

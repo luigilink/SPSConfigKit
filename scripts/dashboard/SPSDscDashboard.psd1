@@ -17,6 +17,22 @@
     # because the pull server's OData API cannot enumerate them.
     NodeManifestPath     = 'F:\DscNodeManifest'
 
+    # -Action Install provisions the NodeManifestPath folder AND publishes it as
+    # an SMB share (so member nodes can write their <NodeName>.json remotely via
+    # CfgLcmPull.ps1 -NodeManifestPath). Only used by Install, and only when
+    # NodeManifestPath is a LOCAL path (a UNC NodeManifestPath is assumed hosted
+    # elsewhere and is left untouched).
+    NodeManifestShare = @{
+        # SMB share name. Defaults to the NodeManifestPath folder leaf
+        # (e.g. 'DscNodeManifest') when omitted.
+        ShareName    = 'DscNodeManifest'
+        # Accounts granted CHANGE (write) so nodes can publish their manifest.
+        # 'Authenticated Users' lets domain computer accounts write; tighten to
+        # e.g. @('CONTOSO\Domain Computers') to lock it down. BUILTIN\Administrators
+        # always keeps Full access.
+        ChangeAccess = @('Authenticated Users')
+    }
+
     # Where the generated HTML is written. Default is the pull server IIS site so
     # it is served over HTTPS at https://<pull>/Dashboard.html.
     OutputPath           = 'C:\inetpub\PSDSCPullServer\Dashboard.html'

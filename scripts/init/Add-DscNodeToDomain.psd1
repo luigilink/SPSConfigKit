@@ -7,9 +7,10 @@
   # DNS server IP address(es) to set on the node's active adapter(s) BEFORE the
   # join. On a cloud VM (for example Azure, whose default DNS is 168.63.129.16)
   # this must be the domain controller IP(s) so the domain can be resolved.
+  # Sample value matches the PDC's DnsServerAddress in scripts\pdc\CfgAppPdc.psd1.
   # Leave as @() to keep the current DNS configuration untouched (on-prem or
   # VMware nodes whose DNS already resolves the domain).
-  DnsServers  = @('10.0.0.4')
+  DnsServers  = @('10.1.1.4')
 
   # Optional distinguished name of the OU the computer object should be created
   # in, e.g. 'OU=Servers,DC=contoso,DC=com'. Empty string = default Computers

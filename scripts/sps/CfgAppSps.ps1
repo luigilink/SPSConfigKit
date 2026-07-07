@@ -247,6 +247,22 @@ try {
     # legitimately omit). Mirrors the IsOOSServer gating of the OOS install Node block.
     $hasOOSNode = @($AllNodes.Where{ $_.IsOOSServer }).Count -gt 0
 
+    # Fail-fast guard: NonNodeData.OOS.AllServers feeds the Servers list of the OOS CU
+    # install (OfficeOnlineServerProductUpdate). Every node carrying the IsOOSServer role
+    # must appear in that list, otherwise the cumulative update is applied to an incomplete
+    # set of machines while the farm still reports those nodes. Only validated when the farm
+    # declares an OOS node (an OOS-less farm has no AllServers contract to honour).
+    if ($hasOOSNode) {
+      $oosNodeNames = @($AllNodes.Where{ $_.IsOOSServer }.NodeName)
+      $oosAllServers = @($ConfigurationData.NonNodeData.OOS.AllServers)
+      $missingOOSServers = @($oosNodeNames | Where-Object { $_ -notin $oosAllServers })
+      if ($missingOOSServers.Count -gt 0) {
+        throw ("NonNodeData.OOS.AllServers is missing IsOOSServer node(s): {0}. " -f ($missingOOSServers -join ', ') +
+          "AllServers must list every Office Online Server node so the CU install targets the whole set. " +
+          ("Declared OOS nodes: {0}. AllServers: {1}." -f ($oosNodeNames -join ', '), ($oosAllServers -join ', ')))
+      }
+    }
+
     #For All servers
     Node $AllNodes.Nodename {
       #Set the Local Configuration Manager

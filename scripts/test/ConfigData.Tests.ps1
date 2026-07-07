@@ -499,6 +499,13 @@ Describe 'OOS configuration' -Skip:(-not $hasOos) {
     $script:ConfigData.NonNodeData.OOS.URL | Should -Not -BeNullOrEmpty
   }
 
+  It 'AllServers lists every IsOOSServer node' {
+    $oosNodeNames = @($script:ConfigData.AllNodes | Where-Object IsOOSServer | ForEach-Object NodeName)
+    $allServers = @($script:ConfigData.NonNodeData.OOS.AllServers)
+    $missing = @($oosNodeNames | Where-Object { $_ -notin $allServers })
+    $missing -join ', ' | Should -BeExactly '' -Because 'OfficeOnlineServerProductUpdate.Servers must target every OOS node'
+  }
+
   Context 'Installation paths (filesystem)' -Skip:$SkipFilesystem {
     BeforeAll {
       $script:OosPaths = script:Resolve-ProductPath `

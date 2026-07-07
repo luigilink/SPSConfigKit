@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- The domain controller publishes DNS A records for the farm host names (#33)
+  - `CfgAppPdc` gains an optional `NonNodeData.DnsRecords` list
+    (`@{ Name; IPAddress }`) and creates each A record in the domain zone with
+    `Add-DnsServerResourceRecordA`, so the SharePoint web-application and Office
+    Online host names (`sharepoint.<domain>`, `oosweb.<domain>`) resolve.
+    Without them, farm creation fails at the WOPI binding step with
+    "The server did not respond". Native DnsServer module (no new dependency),
+    idempotent per record.
 - Optional domain-join helper for cloud nodes (#18)
   - New `scripts/init/Add-DscNodeToDomain.ps1` (+ `.psd1`) points a node's DNS at
     the domain controller and joins it to Active Directory before the node's DSC

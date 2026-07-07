@@ -41,6 +41,12 @@
 
 ### Fixed
 
+- Extracted ISO content is now unblocked (Mark-of-the-Web) (#30)
+  - `Initialize-SoftwarePackages` unblocked directly-downloaded files but not
+    content extracted from ISOs. Mounting a downloaded ISO propagates the
+    Mark-of-the-Web to the copied files, so `prerequisiteinstaller.exe` stayed
+    blocked and SharePoint's `SPInstallPrereqs` failed. The extracted content is
+    now unblocked recursively.
 - SQL Server TCP/IP protocol is now enabled, not just its port (#29)
   - `CfgAppSql` set the IPAll TCP port but never enabled the TCP/IP protocol, so
     Configuration Manager showed TCP/IP = Disabled and the instance listened on no

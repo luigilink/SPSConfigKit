@@ -366,6 +366,20 @@ try {
           Ensure                          = 'Present'
           DependsOn                       = "[WaitForADDomain]WaitForDCReady"
         }
+        # Publish the DNS A records for the SharePoint / Office Online host names
+        # in the domain zone, so the farm nodes can resolve them (farm creation
+        # binds e.g. oosweb.<domain> and fails with "The server did not respond"
+        # when the record is missing). Uses the native DnsServer module (present
+        # with the DNS Server role installed above); idempotent per record.
+        foreach ($dnsRecord in $ConfigurationData.NonNodeData.DnsRecords) {
+          if ([string]::IsNullOrWhiteSpace($dnsRecord.Name) -or [string]::IsNullOrWhiteSpace($dnsRecord.IPAddress)) { continue }
+          Script "SYSTEM_ADS_DnsRecord_$($dnsRecord.Name)" {
+            DependsOn  = '[WaitForADDomain]WaitForDCReady'
+            GetScript  = "@{ Result = (Resolve-DnsName -Name '$($dnsRecord.Name).$fullQualifiedDomainName' -Type A -ErrorAction SilentlyContinue).IPAddress }"
+            TestScript = "(Resolve-DnsName -Name '$($dnsRecord.Name).$fullQualifiedDomainName' -Type A -DnsOnly -ErrorAction SilentlyContinue | Where-Object { `$_.IPAddress -eq '$($dnsRecord.IPAddress)' }) -ne `$null"
+            SetScript  = "`$existing = Get-DnsServerResourceRecord -ZoneName '$fullQualifiedDomainName' -Name '$($dnsRecord.Name)' -RRType A -ErrorAction SilentlyContinue; if (`$existing) { Remove-DnsServerResourceRecord -ZoneName '$fullQualifiedDomainName' -Name '$($dnsRecord.Name)' -RRType A -Force -ErrorAction SilentlyContinue }; Add-DnsServerResourceRecordA -ZoneName '$fullQualifiedDomainName' -Name '$($dnsRecord.Name)' -IPv4Address '$($dnsRecord.IPAddress)'"
+          }
+        }
         # Provision only the entries that are real domain service accounts.
         # Entries with IsAdAccount = $False (credential containers like ADSETUP,
         # ADSAFEMODE, Passphrase, or the per-certificate PFX-password containers

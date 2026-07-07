@@ -49,6 +49,11 @@
 
 ### Fixed
 
+- Remote Event Log Management firewall rule no longer drifts every pass (#35)
+  - The `SYSTEM_EnableRemoteEventLogManagement` Script tested the `Domain` profile
+    but enabled the rule with `-Profile Any`, so its Test never matched its Set and
+    the resource re-ran every consistency check (a permanent, error-free drift on
+    all four configs). The Test now checks the `Any` profile.
 - CfgAppSps default disk Ids match the SharePoint VMs (no temp disk) (#32)
   - `CfgAppSps.psd1` shipped the temp-disk layout (0/2/3), but the SharePoint VM
     sizes (APP / SCH / WFE) have no Azure temp disk, so their real layout is 0/1/2.

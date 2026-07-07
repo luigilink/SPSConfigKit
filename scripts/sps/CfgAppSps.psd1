@@ -136,7 +136,7 @@
       httpErrFolder = 'LOGS\HTTPERR'
     }
     OOS        = @{
-      AllServers                  = @('OOS')
+      AllServers                  = @('OOS1')
       # Optional installation-media path overrides. When omitted the script falls back to:
       #   SourcePath      = <NonNodeData.SourcePath>\OOS
       #   DestinationPath = <Drives.Data>\SoftwarePackages\OOS

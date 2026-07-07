@@ -61,6 +61,8 @@ BeforeDiscovery {
   $hasSql = [bool]($cfg.AllNodes | Where-Object IsSQLServer)
   # SQL connection-encryption opt-in (may be declared by BOTH the SQL and SharePoint configs).
   $hasSqlEncryption = [bool]$cfg.NonNodeData.SQL.ForceEncryption
+  # SQL maintenance-plan opt-in (Ola Hallengren solution).
+  $hasSqlMaintenance = [bool]$cfg.NonNodeData.SQL.InstallMaintenanceSolution
   $hasAdc = [bool]$cfg.NonNodeData.ADC
   $hasAliases = [bool]$cfg.NonNodeData.SQLAlias
   # Source media is only relevant to product configs that copy install bits
@@ -579,6 +581,23 @@ Describe 'SQL connection encryption' -Skip:(-not $hasSqlEncryption) {
     else {
       Set-ItResult -Skipped -Because 'DatabaseConnectionEncryption is not declared (defaults to Optional)'
     }
+  }
+}
+
+# ===========================================================================
+# 8c. SQL maintenance plan (Ola Hallengren) - opt-in
+# ===========================================================================
+Describe 'SQL maintenance plan' -Skip:(-not $hasSqlMaintenance) {
+  It 'declares a MaintenanceSolution.ScriptFileName ending in .sql' {
+    $maint = $script:ConfigData.NonNodeData.SQL.MaintenanceSolution
+    $name = if ($maint -and $maint.ScriptFileName) { $maint.ScriptFileName } else { 'MaintenanceSolution.sql' }
+    $name | Should -Match '\.sql$'
+  }
+
+  It 'declares a non-empty target DatabaseName' {
+    $maint = $script:ConfigData.NonNodeData.SQL.MaintenanceSolution
+    $db = if ($maint -and $maint.DatabaseName) { $maint.DatabaseName } else { 'master' }
+    $db | Should -Not -BeNullOrEmpty
   }
 }
 

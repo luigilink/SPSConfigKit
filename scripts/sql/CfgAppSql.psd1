@@ -69,6 +69,28 @@
       # $false only if you deliberately want unencrypted SQL connections.
       ForceEncryption = $true
       CertificateName = 'SQLServerCert'
+      # Ola Hallengren SQL Server Maintenance Solution (https://ola.hallengren.com).
+      # Opt-in (default $false): when $true, CfgAppSql runs the pre-staged
+      # MaintenanceSolution.sql via a SqlScript resource, creating the DatabaseBackup /
+      # IndexOptimize / DatabaseIntegrityCheck procedures and the SQL Agent jobs. The
+      # execution is idempotent (skipped once the CommandExecute procedure exists).
+      #
+      # The .sql is NOT bundled with this kit (respect Ola's licence / attribution).
+      # Initialize-SoftwarePackages downloads MaintenanceSolution.sql from
+      # https://ola.hallengren.com into the SQL source folder (<SourcePath>\SQL); it is
+      # then staged to the node by the existing File copy. To tune it, edit the DECLARE
+      # parameters at the top of that file (backup directory, cleanup/retention time,
+      # output directory, LogToTable, CreateJobs) before staging — see scripts/sql/README.md.
+      InstallMaintenanceSolution = $false
+      MaintenanceSolution        = @{
+        # File name of the pre-staged Ola script (looked up under the staged SQL folder).
+        ScriptFileName = 'MaintenanceSolution.sql'
+        # Database in which the maintenance objects are created (Ola's default is master).
+        DatabaseName   = 'master'
+        # Optional full path override for the .sql (UNC or local). When omitted the file is
+        # read from the staged SQL folder (<Drives.Data>\SoftwarePackages\SQL\<ScriptFileName>).
+        # SourcePath   = '\\PULL\Softwarepackages\SQL\MaintenanceSolution.sql'
+      }
     }
   }
 }

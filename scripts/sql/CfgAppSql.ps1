@@ -511,6 +511,55 @@ try {
           ServerName           = $Node.NodeName
         }
       }
+      # Install the Ola Hallengren SQL Server Maintenance Solution (opt-in via
+      # NonNodeData.SQL.InstallMaintenanceSolution). The MaintenanceSolution.sql is NOT
+      # bundled with the kit (respect Ola's licence): Initialize-SoftwarePackages downloads
+      # it from https://ola.hallengren.com onto the SoftwarePackages share in the SQL source
+      # folder, so the existing APPLICATION_SqlGetSources copy already places it on the node.
+      # A SqlScript resource runs it under the SQL sysadmin RunAs; a tiny generated test
+      # script makes the apply idempotent (skipped once the CommandExecute procedure exists
+      # in the target database).
+      if ($sqlConfig.InstallMaintenanceSolution) {
+        $maintConfig = if ($sqlConfig.MaintenanceSolution) { $sqlConfig.MaintenanceSolution } else { @{} }
+        $maintScriptName = if ($maintConfig.ScriptFileName) { $maintConfig.ScriptFileName } else { 'MaintenanceSolution.sql' }
+        $maintDatabase = if ($maintConfig.DatabaseName) { $maintConfig.DatabaseName } else { 'master' }
+        # The Ola .sql: an explicit SourcePath wins, otherwise the copy staged by
+        # APPLICATION_SqlGetSources under the local SQL destination folder.
+        $maintSetFilePath = if ($maintConfig.SourcePath) {
+          $maintConfig.SourcePath
+        }
+        else {
+          Join-Path $sqlDestinationPath $maintScriptName
+        }
+        # Test script (generated on the node): returns a row when the solution is NOT yet
+        # installed, so SqlScript runs Set; returns nothing once CommandExecute exists.
+        $maintTestFilePath = Join-Path $sqlDestinationPath 'Test-MaintenanceSolutionInstalled.sql'
+        $maintTestQuery = @"
+USE [$maintDatabase];
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE [name] = N'CommandExecute' AND [type] = N'P')
+    SELECT 1 AS NotInstalled;
+"@
+        File MIDDLEWARE_SqlMaintenanceTestScript {
+          DestinationPath = $maintTestFilePath
+          Contents        = $maintTestQuery
+          Type            = 'File'
+          Force           = $true
+          Ensure          = 'Present'
+        }
+        SqlScript MIDDLEWARE_SqlMaintenanceSolution {
+          DependsOn            = $dependsOnSQLSetup, '[File]APPLICATION_SqlGetSources', '[File]MIDDLEWARE_SqlMaintenanceTestScript'
+          PsDscRunAsCredential = $sqlAdminCredential
+          InstanceName         = $sqlSPInstance
+          ServerName           = $Node.NodeName
+          SetFilePath          = $maintSetFilePath
+          TestFilePath         = $maintTestFilePath
+          GetFilePath          = $maintTestFilePath
+          # Local connection; Optional avoids a certificate-validation failure regardless of
+          # whether ForceEncryption is enabled on the instance.
+          Encrypt              = 'Optional'
+          QueryTimeout         = 0
+        }
+      }
       # Open port on the firewall only when everything is ready, as SharePoint DSC is testing it to start creating the farm.
       # Gated on $sqlTcpPort so the DependsOn / LocalPort references stay valid only when SqlProtocolTcpIP is also emitted.
       if ($null -ne $sqlTcpPort) {

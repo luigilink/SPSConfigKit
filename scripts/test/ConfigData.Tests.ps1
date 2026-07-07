@@ -54,7 +54,13 @@ BeforeDiscovery {
   $hasSps = [bool]$cfg.NonNodeData.SharePoint
   $hasSearchTopology = [bool]$cfg.NonNodeData.SharePoint.Services.SearchService
   $hasOos = [bool]$cfg.NonNodeData.OOS
-  $hasSql = [bool]$cfg.NonNodeData.SQL -or ($cfg.AllNodes | Where-Object IsSQLServer)
+  # SQL *tier* detection = an actual SQL node. NonNodeData.SQL alone is NOT sufficient:
+  # the SharePoint config also declares a NonNodeData.SQL block (ForceEncryption flag) so
+  # it can trust the SQL certificate, but it has no IsSQLServer node and must not trigger
+  # the SQL role / SQL install Describe blocks.
+  $hasSql = [bool]($cfg.AllNodes | Where-Object IsSQLServer)
+  # SQL connection-encryption opt-in (may be declared by BOTH the SQL and SharePoint configs).
+  $hasSqlEncryption = [bool]$cfg.NonNodeData.SQL.ForceEncryption
   $hasAdc = [bool]$cfg.NonNodeData.ADC
   $hasAliases = [bool]$cfg.NonNodeData.SQLAlias
   # Source media is only relevant to product configs that copy install bits
@@ -551,6 +557,27 @@ Describe 'SQL configuration' -Skip:(-not $hasSql) {
     }
     It 'SourcePath contains setup.exe at its root' {
       Test-Path -LiteralPath (Join-Path $script:SqlPaths.Source 'setup.exe') | Should -BeTrue
+    }
+  }
+}
+
+# ===========================================================================
+# 8b. SQL connection encryption (declared by the SQL and/or SharePoint config)
+# ===========================================================================
+Describe 'SQL connection encryption' -Skip:(-not $hasSqlEncryption) {
+  It 'CertificateName resolves to an ADC certificate' {
+    $certName = if ($script:ConfigData.NonNodeData.SQL.CertificateName) { $script:ConfigData.NonNodeData.SQL.CertificateName } else { 'SQLServerCert' }
+    $names = @($script:ConfigData.NonNodeData.ADC.certificates | ForEach-Object Name)
+    $names | Should -Contain $certName -Because 'ForceEncryption imports/binds (SQL) or trusts (SharePoint) this certificate'
+  }
+
+  It 'DatabaseConnectionEncryption, when set, is Optional / Mandatory / Strict' {
+    $level = $script:ConfigData.NonNodeData.SQL.DatabaseConnectionEncryption
+    if ($null -ne $level) {
+      $level | Should -BeIn @('Optional', 'Mandatory', 'Strict')
+    }
+    else {
+      Set-ItResult -Skipped -Because 'DatabaseConnectionEncryption is not declared (defaults to Optional)'
     }
   }
 }

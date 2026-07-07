@@ -91,6 +91,22 @@ try {
     throw "Missing $inputFile"
   }
 
+  # DRY: derive certificate paths from the single share root (NonNodeData.SourcePath)
+  # + each entry's CerFileName / PfxFileName, so the share host is defined only once.
+  # An explicit CertPath / PfxPath on an entry is still honoured (backward compatible).
+  $certSourcePath = $configurationData.NonNodeData.SourcePath
+  if ($configurationData.NonNodeData.ADC -and $configurationData.NonNodeData.ADC.certificates) {
+    foreach ($cert in $configurationData.NonNodeData.ADC.certificates) {
+      $certRoot = $certSourcePath.TrimEnd('\')
+      if ([string]::IsNullOrWhiteSpace($cert.CertPath) -and -not [string]::IsNullOrWhiteSpace($cert.CerFileName)) {
+        $cert.CertPath = '{0}\{1}' -f $certRoot, $cert.CerFileName
+      }
+      if ([string]::IsNullOrWhiteSpace($cert.PfxPath) -and -not [string]::IsNullOrWhiteSpace($cert.PfxFileName)) {
+        $cert.PfxPath = '{0}\{1}' -f $certRoot, $cert.PfxFileName
+      }
+    }
+  }
+
   # DRY: derive the semantic Drives hashtable (Data/Logs/Temp -> letter) from the
   # authoritative NonNodeData.Disks list, so a drive letter is declared only once.
   # Temp falls back to the Data drive when no dedicated Temp disk is declared.
@@ -139,6 +155,34 @@ try {
   }
   if (-not (Test-Path -Path $mofOutputPath)) {
     New-Item -Path $mofOutputPath -ItemType Directory | Out-Null
+  }
+
+  function Get-CertThumbprint() {
+    param
+    (
+      [parameter(Mandatory = $true)]
+      [System.String]
+      $CertPath
+    )
+    try {
+      $certObject = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+      $certObject.Import($CertPath, "", 'DefaultKeySet')
+      $item = Get-Item $CertPath
+      return @{
+        Error      = $false
+        Thumbprint = $certObject.Thumbprint
+        BaseName   = $item.BaseName
+      }
+    }
+    catch {
+      Write-Warning $_.Exception.Message
+      Write-Warning "$CertPath was not found"
+      return @{
+        Error      = $true
+        Thumbprint = "0000000000000000000000000000000000000000"
+        BaseName   = "ERROR"
+      }
+    }
   }
 
   Configuration CfgAppSql {
@@ -425,6 +469,47 @@ try {
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance
         MaxDop               = 1
+      }
+      # Force TLS encryption of SQL Server connections (opt-in via NonNodeData.SQL.ForceEncryption).
+      # Existing farms are unaffected while the flag is absent / $false. The certificate is the
+      # pre-staged PFX distributed on the SoftwarePackages share (SQLServerCert by default, already
+      # declared in ADC.certificates with its password in Secrets.psd1). NOTE: the SharePoint /
+      # client side must trust this certificate (its issuing CA present in the client's
+      # LocalMachine\Root), otherwise SharePoint connects with "certificate chain not trusted".
+      if ($sqlConfig.ForceEncryption) {
+        $sqlCertName = if ($sqlConfig.CertificateName) { $sqlConfig.CertificateName } else { 'SQLServerCert' }
+        $sqlCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq $sqlCertName }
+        if ($null -eq $sqlCertInfo) {
+          throw ("NonNodeData.SQL.ForceEncryption is enabled but no ADC certificate named '{0}' was found in NonNodeData.ADC.certificates." -f $sqlCertName)
+        }
+        # Resolve the real thumbprint from the .cer so SqlSecureConnection binds the exact cert
+        # (unlike auto-enrollment setups that pass the subject; here the PFX is known in advance).
+        $sqlCertThumbprint = Get-CertThumbprint -CertPath "$($sqlCertInfo.CertPath)"
+        #Import the SQL TLS certificate into LocalMachine\My
+        PfxImport MIDDLEWARE_SqlCertificateImport {
+          DependsOn  = $dependsOnSQLSetup
+          Thumbprint = $sqlCertThumbprint.Thumbprint
+          Path       = "$($sqlCertInfo.PfxPath)"
+          Store      = 'My'
+          Location   = 'LocalMachine'
+          # Per-cert PFX password: resolves the PSCredential auto-materialised by the secrets loader
+          # in Secrets.psd1 (Name = $sqlCertInfo.Name, i.e. 'SQLServerCert').
+          Credential = (Get-Variable -Name $sqlCertInfo.Name -ValueOnly)
+          Exportable = $true
+          Ensure     = 'Present'
+        }
+        #Bind the certificate to the SQL instance and force encryption. SqlSecureConnection grants
+        # the ServiceAccount read access to the private key and restarts the engine to apply.
+        SqlSecureConnection MIDDLEWARE_SqlForceEncryption {
+          DependsOn            = '[PfxImport]MIDDLEWARE_SqlCertificateImport'
+          PsDscRunAsCredential = $sqlAdminCredential
+          InstanceName         = $sqlSPInstance
+          Thumbprint           = $sqlCertThumbprint.Thumbprint
+          ForceEncryption      = $true
+          Ensure               = 'Present'
+          ServiceAccount       = $SQLSERVER.UserName
+          ServerName           = $Node.NodeName
+        }
       }
       # Open port on the firewall only when everything is ready, as SharePoint DSC is testing it to start creating the farm.
       # Gated on $sqlTcpPort so the DependsOn / LocalPort references stay valid only when SqlProtocolTcpIP is also emitted.

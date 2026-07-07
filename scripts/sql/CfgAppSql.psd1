@@ -38,6 +38,20 @@
       @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 64KB  }
       @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 64KB  }
     )
+    # Certificate distribution (mirrors CfgAppSps ADC block). Paths are derived from
+    # NonNodeData.SourcePath + CerFileName / PfxFileName by CfgAppSql.ps1, and each
+    # entry's PFX password comes from the matching Secrets.psd1 serviceAccount (Name).
+    # Only consumed when NonNodeData.SQL.ForceEncryption is enabled below.
+    ADC         = @{
+      certificates = @(
+        @{
+          Name         = 'SQLServerCert'
+          FriendlyName = 'SQLCertSSL'
+          CerFileName  = 'SQLServer.cer'
+          PfxFileName  = 'SQLServer.pfx'
+        }
+      )
+    }
     # Optional installation-media path overrides for customers whose file hierarchy
     # differs from the kit's defaults. When omitted the script falls back to:
     #   SourcePath      = <NonNodeData.SourcePath>\SQL
@@ -46,6 +60,15 @@
     SQL         = @{
       # SourcePath      = '\\PULL\Softwarepackages\SQL'
       # DestinationPath = 'F:\SoftwarePackages\SQL'
+      # TLS encryption of SQL Server connections (secure-by-default in this kit). When
+      # $true, CfgAppSql imports CertificateName (an ADC.certificates entry, default
+      # 'SQLServerCert') into LocalMachine\My, binds it to the instance and enables
+      # ForceEncryption. The SharePoint nodes must trust the certificate's issuing CA
+      # (its root in their LocalMachine\Root) or connections fail with a certificate-chain
+      # error — CfgAppSps imports the SQL certificate there under the same flag. Set to
+      # $false only if you deliberately want unencrypted SQL connections.
+      ForceEncryption = $true
+      CertificateName = 'SQLServerCert'
     }
   }
 }

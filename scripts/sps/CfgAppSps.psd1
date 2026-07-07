@@ -101,6 +101,18 @@
         }
       )
     }
+    # SQL Server connection encryption. Must stay in sync with CfgAppSql.psd1's
+    # NonNodeData.SQL block: when the SQL tier forces encryption, SharePoint imports the
+    # SQL certificate (CertificateName, an ADC.certificates entry) into LocalMachine\Root
+    # so it trusts the SQL TLS chain. Set both sides to $false together to disable.
+    # DatabaseConnectionEncryption is applied to the SPFarm resource (required by the
+    # SharePoint SE 2025-08 PU): Optional encrypts without validating the SQL certificate;
+    # Mandatory / Strict also validate the chain (they rely on the Root import above).
+    SQL        = @{
+      ForceEncryption              = $true
+      CertificateName              = 'SQLServerCert'
+      DatabaseConnectionEncryption = 'Mandatory'
+    }
     SQLAlias   = @(
       @{
         Name         = 'ADMIN'

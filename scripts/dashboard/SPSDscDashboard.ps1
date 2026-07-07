@@ -323,10 +323,15 @@ function ConvertTo-NodeCompliance {
   $configName = if ($Node.ConfigurationNames) { ($Node.ConfigurationNames -join ', ') } else { '' }
 
   # Compliance-relevant reports only (skip LCM meta-config runs), latest first.
-  $relevant = @($Reports | Where-Object { $_.OperationType -ne 'LocalConfigurationManager' })
-  $latest = $relevant |
-    Sort-Object { if ($_.StartTime) { [DateTime]$_.StartTime } else { [DateTime]::MinValue } } -Descending |
-    Select-Object -First 1
+  $relevant = @($Reports | Where-Object { $_.OperationType -ne 'LocalConfigurationManager' }) |
+    Sort-Object { if ($_.StartTime) { [DateTime]$_.StartTime } else { [DateTime]::MinValue } } -Descending
+  # Prefer the most recent report with a definitive Status (Success/Failure).
+  # A node whose LCM is mid-consistency-check has an in-progress report at the top
+  # (no Status yet, sentinel EndTime 1899-12-30); picking it would hide the last
+  # real state and show 'Unknown'. Fall back to the very latest only when no
+  # completed report exists.
+  $latest = $relevant | Where-Object { $_.Status -eq 'Success' -or $_.Status -eq 'Failure' } | Select-Object -First 1
+  if (-not $latest) { $latest = $relevant | Select-Object -First 1 }
 
   $state = 'Unresponsive'
   $lastSeen = $null

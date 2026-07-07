@@ -38,8 +38,9 @@
         - expands ISO contents to the target folder when Extract = $true,
           using Windows' native Mount-DiskImage / Copy-Item / Dismount-DiskImage
           pipeline (no 7-Zip required)
-        - unblocks downloaded .exe files (extracted ISO content carries no
-          Mark-of-the-Web so does not need unblocking)
+        - unblocks downloaded .exe files AND the content extracted from ISOs
+          (mounting a downloaded ISO propagates the Mark-of-the-Web to the
+          copied files, so the setup binaries must be unblocked too)
 
   The Chocolatey and download phases are skipped automatically when the host
   has no outbound internet access. Per-package failures are caught and
@@ -256,6 +257,15 @@ if ($configurationData.SoftwarePackages.Count -ne 0) {
                     Write-Host "Copying contents from '$source' to '$path'..."
                     Copy-Item -Path (Join-Path -Path $source -ChildPath '*') `
                         -Destination $path -Recurse -Force
+
+                    # Mounting a downloaded (MOTW-tagged) ISO and copying its
+                    # contents propagates the Zone.Identifier to every extracted
+                    # file, so the setup binaries (e.g. prerequisiteinstaller.exe)
+                    # stay blocked and SharePoint's SPInstallPrereqs fails. Unblock
+                    # the extracted content recursively.
+                    Write-Host "Unblocking extracted content under '$path'..."
+                    Get-ChildItem -Path $path -Recurse -File -ErrorAction SilentlyContinue |
+                        Unblock-File -ErrorAction SilentlyContinue
                 }
                 finally {
                     if ($mounted) {

@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SQL Server TCP/IP protocol is now enabled, not just its port (#29)
+  - `CfgAppSql` set the IPAll TCP port but never enabled the TCP/IP protocol, so
+    Configuration Manager showed TCP/IP = Disabled and the instance listened on no
+    TCP port — SharePoint and remote clients failed with "SQL Server does not exist
+    or access denied". A `SqlProtocol` resource now enables TcpIp (with a service
+    restart) before the port is set.
 - CfgAppSps CU references now match the package manifest (#28)
   - The SharePoint (`UberCumulativeUpdate`) and OOS (`CUFileName`) cumulative
     updates referenced by `CfgAppSps.psd1` pointed at older KBs than

@@ -239,7 +239,14 @@ try {
     #Initialize Master and Search Master variables based on the roles defined in the configuration data
     $SPSMaster = $AllNodes.Where{ $_.IsSPSServer -and $_.IsMaster }.NodeName
     $SPSSearchMaster = ($AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -like "*Search*" } | Select-Object -First 1).NodeName
-    
+
+    # Detect whether the farm actually declares an Office Online Server node. When no node
+    # carries the IsOOSServer role the OOS install Node block compiles nothing, so the
+    # SharePoint side must NOT push the OOS trust / WOPI binding / suppression settings
+    # (they reference NonNodeData.OOS and the OfficeOnlineCert that an OOS-less farm may
+    # legitimately omit). Mirrors the IsOOSServer gating of the OOS install Node block.
+    $hasOOSNode = @($AllNodes.Where{ $_.IsOOSServer }).Count -gt 0
+
     #For All servers
     Node $AllNodes.Nodename {
       #Set the Local Configuration Manager
@@ -1020,31 +1027,37 @@ try {
         SiteUrl              = $ConfigurationData.NonNodeData.SharePoint.Services.AppManagementService.AppCatalogUrl
         PsDscRunAsCredential = $SETUP
       }
-      #Initialize variables for Office Online Server configuration
-      $oosCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'OfficeOnlineCert' }
-      # Add Office Online Server Certificate in SPTrustedRootAuthority
-      SPTrustedRootAuthority APPLICATION_AddOOSTrustedRootAuthority {
-        DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
-        Name                 = 'OOS'
-        CertificateFilePath  = "$($oosCertInfo.CertPath)"
-        Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
-      }
-      #OfficeOnlineServer | Add WOPIBINDING
-      SPOfficeOnlineServerBinding APPLICATION_CreateWOPIBinding {
-        DependsOn            = "[SPTrustedRootAuthority]APPLICATION_AddOOSTrustedRootAuthority"
-        PsDscRunAsCredential = $SETUP
-        DnsName              = "$($ConfigurationData.NonNodeData.OOS.URL)"
-        Ensure               = 'Present'
-        Zone                 = 'External-HTTPS'
-      }
-      #OfficeOnlineServer | Remove PDF file type
-      SPOfficeOnlineServerSupressionSettings APPLICATION_OOSRemovePDFExtension {
-        DependsOn            = '[SPOfficeOnlineServerBinding]APPLICATION_CreateWOPIBinding'
-        PsDscRunAsCredential = $SETUP
-        Ensure               = 'Present'
-        Extension            = 'pdf'
-        Actions              = 'edit', 'view'
+      # Office Online Server integration (trust + WOPI binding + suppression settings) is
+      # only provisioned when the farm actually declares an OOS node. Skipping it on an
+      # OOS-less farm avoids referencing NonNodeData.OOS / the OfficeOnlineCert that such a
+      # farm does not declare, and prevents pushing a WOPI binding to a non-existent server.
+      if ($hasOOSNode) {
+        #Initialize variables for Office Online Server configuration
+        $oosCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'OfficeOnlineCert' }
+        # Add Office Online Server Certificate in SPTrustedRootAuthority
+        SPTrustedRootAuthority APPLICATION_AddOOSTrustedRootAuthority {
+          DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
+          Name                 = 'OOS'
+          CertificateFilePath  = "$($oosCertInfo.CertPath)"
+          Ensure               = 'Present'
+          PsDscRunAsCredential = $ADSETUP
+        }
+        #OfficeOnlineServer | Add WOPIBINDING
+        SPOfficeOnlineServerBinding APPLICATION_CreateWOPIBinding {
+          DependsOn            = "[SPTrustedRootAuthority]APPLICATION_AddOOSTrustedRootAuthority"
+          PsDscRunAsCredential = $SETUP
+          DnsName              = "$($ConfigurationData.NonNodeData.OOS.URL)"
+          Ensure               = 'Present'
+          Zone                 = 'External-HTTPS'
+        }
+        #OfficeOnlineServer | Remove PDF file type
+        SPOfficeOnlineServerSupressionSettings APPLICATION_OOSRemovePDFExtension {
+          DependsOn            = '[SPOfficeOnlineServerBinding]APPLICATION_CreateWOPIBinding'
+          PsDscRunAsCredential = $SETUP
+          Ensure               = 'Present'
+          Extension            = 'pdf'
+          Actions              = 'edit', 'view'
+        }
       }
       # Configure Service Account for Search Service and Search Host Controller Service
       SPServiceIdentity APPLICATION_SpsSvcAppSearchService {

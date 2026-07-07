@@ -1,6 +1,6 @@
 # SPSConfigKit - Release Notes
 
-## [1.5.0] - 2026-07-06
+## [1.5.0] - 2026-07-07
 
 ### Added
 

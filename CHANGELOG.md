@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- CfgAppSps default disk Ids match the SharePoint VMs (no temp disk) (#32)
+  - `CfgAppSps.psd1` shipped the temp-disk layout (0/2/3), but the SharePoint VM
+    sizes (APP / SCH / WFE) have no Azure temp disk, so their real layout is 0/1/2.
+    Defaulted DATA to disk Number 1 and LOGS to Number 2; a VM with a temp disk
+    still shifts to 0/2/3 (as PDC/PULL/SQL use).
 - Extracted ISO content is now unblocked (Mark-of-the-Web) (#30)
   - `Initialize-SoftwarePackages` unblocked directly-downloaded files but not
     content extracted from ISOs. Mounting a downloaded ISO propagates the

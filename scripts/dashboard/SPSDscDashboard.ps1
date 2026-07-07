@@ -127,6 +127,7 @@ $OutputPath           = Get-SettingValue $settings.OutputPath        (Join-Path 
 $Title                = Get-SettingValue $settings.Title             'SharePoint Farm — DSC Compliance'
 $MaxReportsPerNode    = Get-SettingValue $settings.MaxReportsPerNode 50
 $NodeManifestPath     = $settings.NodeManifestPath
+$NodeManifestShare    = $settings.NodeManifestShare
 $MockDataPath         = $settings.MockDataPath
 $SkipCertificateCheck = [bool]$settings.SkipCertificateCheck
 $IntervalMinutes      = Get-SettingValue $schedule.IntervalMinutes   30
@@ -166,6 +167,50 @@ function ConvertFrom-DscStatusData {
     Write-Warning "Unable to parse StatusData: $($_.Exception.Message)"
     return $null
   }
+}
+
+function Format-DscTimestamp {
+  <#
+    Render a report timestamp, treating the OLE-automation sentinel date
+    (1899-12-30, i.e. DateTime "zero") and any pre-2000 value as "no report yet"
+    rather than printing a confusing 1899 date. Returns '—' in that case.
+  #>
+  param($Value, [string] $Format = 'yyyy-MM-dd HH:mm')
+  if ($null -eq $Value) { return '—' }
+  try {
+    $dt = [DateTime]$Value
+    if ($dt.Year -lt 2000) { return '—' }
+    return $dt.ToString($Format)
+  }
+  catch { return '—' }
+}
+
+function Format-DscError {
+  <#
+    A StatusReport Errors entry is a JSON-encoded object such as
+    {"Locale":"en-US","ErrorCode":"11","ErrorMessage":"...\u0027...","ErrorSource":"DSCEngine"}.
+    Extract the human-readable ErrorMessage (ConvertFrom-Json also decodes the
+    \uXXXX escapes). Fall back to Regex.Unescape on the raw string when the entry
+    is not JSON, so the banner never shows raw \u0027 / JSON noise.
+  #>
+  param($ErrorEntry)
+  if ($null -eq $ErrorEntry) { return '' }
+  $text = [string]$ErrorEntry
+  if ([string]::IsNullOrWhiteSpace($text)) { return '' }
+  try {
+    $obj = $text | ConvertFrom-Json -ErrorAction Stop
+    if ($obj -and $obj.PSObject.Properties.Name -contains 'ErrorMessage' -and -not [string]::IsNullOrWhiteSpace($obj.ErrorMessage)) {
+      $msg = [string]$obj.ErrorMessage
+      if ($obj.PSObject.Properties.Name -contains 'ErrorCode' -and -not [string]::IsNullOrWhiteSpace([string]$obj.ErrorCode)) {
+        return ("[{0}] {1}" -f $obj.ErrorCode, $msg)
+      }
+      return $msg
+    }
+  }
+  catch {
+    # Not JSON — fall through to a best-effort unescape of the raw string.
+  }
+  try { return [System.Text.RegularExpressions.Regex]::Unescape($text) } catch { return $text }
 }
 
 function Invoke-DscPullApi {
@@ -278,10 +323,15 @@ function ConvertTo-NodeCompliance {
   $configName = if ($Node.ConfigurationNames) { ($Node.ConfigurationNames -join ', ') } else { '' }
 
   # Compliance-relevant reports only (skip LCM meta-config runs), latest first.
-  $relevant = @($Reports | Where-Object { $_.OperationType -ne 'LocalConfigurationManager' })
-  $latest = $relevant |
-    Sort-Object { if ($_.StartTime) { [DateTime]$_.StartTime } else { [DateTime]::MinValue } } -Descending |
-    Select-Object -First 1
+  $relevant = @($Reports | Where-Object { $_.OperationType -ne 'LocalConfigurationManager' }) |
+    Sort-Object { if ($_.StartTime) { [DateTime]$_.StartTime } else { [DateTime]::MinValue } } -Descending
+  # Prefer the most recent report with a definitive Status (Success/Failure).
+  # A node whose LCM is mid-consistency-check has an in-progress report at the top
+  # (no Status yet, sentinel EndTime 1899-12-30); picking it would hide the last
+  # real state and show 'Unknown'. Fall back to the very latest only when no
+  # completed report exists.
+  $latest = $relevant | Where-Object { $_.Status -eq 'Success' -or $_.Status -eq 'Failure' } | Select-Object -First 1
+  if (-not $latest) { $latest = $relevant | Select-Object -First 1 }
 
   $state = 'Unresponsive'
   $lastSeen = $null
@@ -295,7 +345,7 @@ function ConvertTo-NodeCompliance {
   if ($latest) {
     $lastSeen = $latest.EndTime
     $configVersion = [string]$latest.ConfigurationVersion
-    $errors = @($latest.Errors | Where-Object { $_ })
+    $errors = @($latest.Errors | Where-Object { $_ } | ForEach-Object { Format-DscError $_ } | Where-Object { $_ })
     $sd = ConvertFrom-DscStatusData -StatusData $latest.StatusData
 
     if ($sd) {
@@ -425,7 +475,7 @@ function ConvertTo-DashboardHtml {
       }, NodeName)) {
     $meta = $stateMeta[$n.ComplianceState]
     if (-not $meta) { $meta = $stateMeta['Unknown'] }
-    $lastSeenTxt = if ($n.LastSeen) { ([DateTime]$n.LastSeen).ToString('yyyy-MM-dd HH:mm') } else { '—' }
+    $lastSeenTxt = Format-DscTimestamp $n.LastSeen 'yyyy-MM-dd HH:mm'
     $driftTxt = if ($n.ComplianceState -eq 'Unresponsive') { '—' } else { "$($n.ResourcesNotInDesired) / $($n.TotalResources)" }
     $anchor = 'node-' + ($n.AgentId -replace '[^A-Za-z0-9]', '')
 
@@ -476,7 +526,7 @@ function ConvertTo-DashboardHtml {
       <div class="node-body">
         <div class="kv">
           <div><span class="k">Configuration</span><span class="v mono">$(ConvertTo-HtmlText $n.ConfigurationName) $(ConvertTo-HtmlText ([string]$n.ConfigurationVersion))</span></div>
-          <div><span class="k">Last report</span><span class="v mono">$(if ($n.LastSeen) { ([DateTime]$n.LastSeen).ToString('yyyy-MM-dd HH:mm:ss') } else { '—' })</span></div>
+          <div><span class="k">Last report</span><span class="v mono">$(Format-DscTimestamp $n.LastSeen 'yyyy-MM-dd HH:mm:ss')</span></div>
           <div><span class="k">Run duration</span><span class="v mono">$(if ($n.DurationInSeconds) { "$($n.DurationInSeconds)s" } else { '—' })</span></div>
           <div><span class="k">Resources</span><span class="v">$($n.ResourcesInDesired) in state, $($n.ResourcesNotInDesired) drifted</span></div>
         </div>
@@ -794,6 +844,65 @@ function Assert-Elevated {
   }
 }
 
+function Initialize-NodeManifestShare {
+  # Create the NodeManifestPath folder and publish it as an SMB share so member
+  # nodes can write their <NodeName>.json manifest remotely via
+  # CfgLcmPull.ps1 -NodeManifestPath. Idempotent. Skipped when NodeManifestPath
+  # is a UNC path (the share is hosted elsewhere) or not set.
+  [CmdletBinding(SupportsShouldProcess = $true)]
+  param()
+
+  if ([string]::IsNullOrWhiteSpace($NodeManifestPath)) {
+    Write-Host '[i] No NodeManifestPath set; skipping manifest share provisioning.'
+    return
+  }
+  if ($NodeManifestPath -like '\\*') {
+    Write-Host ("[i] NodeManifestPath '{0}' is a UNC path (hosted elsewhere); skipping local share provisioning." -f $NodeManifestPath)
+    return
+  }
+
+  if (-not (Test-Path -LiteralPath $NodeManifestPath)) {
+    if ($PSCmdlet.ShouldProcess($NodeManifestPath, 'Create node manifest folder')) {
+      New-Item -ItemType Directory -Path $NodeManifestPath -Force | Out-Null
+      Write-Host ("[+] Created node manifest folder '{0}'." -f $NodeManifestPath)
+    }
+  }
+
+  $shareName = if ($NodeManifestShare -and -not [string]::IsNullOrWhiteSpace($NodeManifestShare.ShareName)) {
+    $NodeManifestShare.ShareName
+  }
+  else {
+    Split-Path -Path $NodeManifestPath.TrimEnd('\') -Leaf
+  }
+  # Nodes must WRITE their manifest, so grant Change (not just Read). Default to
+  # 'Authenticated Users' so domain computer accounts can publish.
+  $changeAccess = if ($NodeManifestShare -and $NodeManifestShare.ChangeAccess) {
+    @($NodeManifestShare.ChangeAccess)
+  }
+  else {
+    @('Authenticated Users')
+  }
+
+  $existingShare = Get-SmbShare -Name $shareName -ErrorAction SilentlyContinue
+  if ($existingShare -and $existingShare.Path -ne $NodeManifestPath) {
+    if ($PSCmdlet.ShouldProcess($shareName, ("Recreate share (was '{0}', want '{1}')" -f $existingShare.Path, $NodeManifestPath))) {
+      Remove-SmbShare -Name $shareName -Force
+      $existingShare = $null
+    }
+  }
+  if (-not $existingShare) {
+    if ($PSCmdlet.ShouldProcess($shareName, ("Publish SMB share -> '{0}'" -f $NodeManifestPath))) {
+      New-SmbShare -Name $shareName -Path $NodeManifestPath `
+        -FullAccess 'BUILTIN\Administrators' -ChangeAccess $changeAccess | Out-Null
+      Write-Host ("[+] Published SMB share '\\{0}\{1}' (Change: {2})." -f $env:COMPUTERNAME, $shareName, ($changeAccess -join ', '))
+    }
+  }
+  else {
+    Write-Host ("[i] SMB share '{0}' already points at '{1}'." -f $shareName, $NodeManifestPath)
+  }
+  Write-Host ("[i] Point each node's CfgLcmPull.ps1 -NodeManifestPath at '\\{0}\{1}'." -f $env:COMPUTERNAME, $shareName)
+}
+
 function Invoke-DashboardInstall {
   [CmdletBinding(SupportsShouldProcess = $true)]
   param()
@@ -810,6 +919,10 @@ function Invoke-DashboardInstall {
   Write-Host ("| Output          {0}" -f $OutputPath)
   Write-Host ("| Run as          {0}" -f $(if ($InstallAccount) { $InstallAccount.UserName } else { 'SYSTEM' }))
   Write-Host '-----------------------------------------------'
+
+  # Ensure the node manifest folder exists and is shared so member nodes can
+  # publish their <NodeName>.json at LCM registration.
+  Initialize-NodeManifestShare
 
   if ($IntervalMinutes -lt 60) {
     Write-Host ("[i] Refresh interval is {0} min. This is the practical floor — DSC nodes only report on their LCM consistency interval (typically 60-120 min), so a shorter refresh adds load without newer data." -f $IntervalMinutes)

@@ -18,6 +18,13 @@
     # (e.g. this pull server), NOT on a domain controller. The certificate path is
     # derived from this by CfgAppPull.ps1 (SourcePath + CerFileName / PfxFileName).
     SourcePath = '\\PULL\Softwarepackages'
+    # The pull server publishes SourcePath as an SMB share (the share name is the
+    # last segment of SourcePath, the folder lives on the Data drive). Read access
+    # defaults to 'Authenticated Users'; override it here to lock the share down,
+    # e.g. ReadAccess = @('CONTOSO\svcspssetup', 'CONTOSO\Domain Computers').
+    SoftwarePackagesShare = @{
+      ReadAccess = @('Authenticated Users')
+    }
     # Set to $false when the customer manages storage themselves. Default $true.
     ManageDisks = $true
     # Data disks, initialised by scripts/init/Initialize-DscDisks.ps1 (keyed by disk Number).

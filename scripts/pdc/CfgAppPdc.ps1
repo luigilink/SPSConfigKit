@@ -221,7 +221,7 @@ try {
       #Enable Windows Firewall Remote Event Log Management
       Script SYSTEM_EnableRemoteEventLogManagement {
         GetScript  = { }
-        TestScript = { return $null -ne (Get-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -ErrorAction SilentlyContinue | Where-Object { $_.Profile -eq 'Domain' }) }
+        TestScript = { return $null -ne (Get-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -ErrorAction SilentlyContinue | Where-Object { $_.Profile -eq 'Any' }) }
         SetScript  = { Set-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -Profile Any }
       }
       #Install the Remote Server Administration Tools for Active Directory Domain Services Tools
@@ -307,13 +307,18 @@ try {
         DependsOn = '[ADDomain]SYSTEM_ADS_CreateADForest'
       }
       #Wait for the Domain Controller to be ready
+      # Runs on the DC itself right after promotion, as SYSTEM (already a domain
+      # principal), so it validates the domain in the local computer context. Do
+      # NOT pass a Credential here: that parameter is for a member/replica server
+      # waiting for a REMOTE domain, and impersonating a domain service account
+      # that this very configuration has not created yet (the ADUser resources
+      # below DependOn this one) deadlocks with "user name or password is
+      # incorrect" and loops WaitTimeout x RestartCount before failing.
       WaitForADDomain WaitForDCReady {
-        DomainName              = $ConfigurationData.NonNodeData.ADS.DomainName
-        WaitTimeout             = 300
-        RestartCount            = 3
-        Credential              = $ADSETUP
-        WaitForValidCredentials = $true
-        DependsOn               = '[PendingReboot]RebootOnSignalFromCreateADForest'
+        DomainName   = $ConfigurationData.NonNodeData.ADS.DomainName
+        WaitTimeout  = 300
+        RestartCount = 3
+        DependsOn    = '[PendingReboot]RebootOnSignalFromCreateADForest'
       }
       # Edge browser policies are optional and gated by $Node.ApplyEdgePolicies.
       # The OU / service-account / user-account provisioning further down is gated
@@ -360,6 +365,20 @@ try {
           ProtectedFromAccidentalDeletion = $false
           Ensure                          = 'Present'
           DependsOn                       = "[WaitForADDomain]WaitForDCReady"
+        }
+        # Publish the DNS A records for the SharePoint / Office Online host names
+        # in the domain zone, so the farm nodes can resolve them (farm creation
+        # binds e.g. oosweb.<domain> and fails with "The server did not respond"
+        # when the record is missing). Uses the native DnsServer module (present
+        # with the DNS Server role installed above); idempotent per record.
+        foreach ($dnsRecord in $ConfigurationData.NonNodeData.DnsRecords) {
+          if ([string]::IsNullOrWhiteSpace($dnsRecord.Name) -or [string]::IsNullOrWhiteSpace($dnsRecord.IPAddress)) { continue }
+          Script "SYSTEM_ADS_DnsRecord_$($dnsRecord.Name)" {
+            DependsOn  = '[WaitForADDomain]WaitForDCReady'
+            GetScript  = "@{ Result = (Resolve-DnsName -Name '$($dnsRecord.Name).$fullQualifiedDomainName' -Type A -ErrorAction SilentlyContinue).IPAddress }"
+            TestScript = "(Resolve-DnsName -Name '$($dnsRecord.Name).$fullQualifiedDomainName' -Type A -DnsOnly -ErrorAction SilentlyContinue | Where-Object { `$_.IPAddress -eq '$($dnsRecord.IPAddress)' }) -ne `$null"
+            SetScript  = "`$existing = Get-DnsServerResourceRecord -ZoneName '$fullQualifiedDomainName' -Name '$($dnsRecord.Name)' -RRType A -ErrorAction SilentlyContinue; if (`$existing) { Remove-DnsServerResourceRecord -ZoneName '$fullQualifiedDomainName' -Name '$($dnsRecord.Name)' -RRType A -Force -ErrorAction SilentlyContinue }; Add-DnsServerResourceRecordA -ZoneName '$fullQualifiedDomainName' -Name '$($dnsRecord.Name)' -IPv4Address '$($dnsRecord.IPAddress)'"
+          }
         }
         # Provision only the entries that are real domain service accounts.
         # Entries with IsAdAccount = $False (credential containers like ADSETUP,

@@ -195,7 +195,7 @@ try {
       #Enable Windows Firewall Remote Event Log Management
       Script SYSTEM_EnableRemoteEventLogManagement {
         GetScript  = { }
-        TestScript = { return $null -ne (Get-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -ErrorAction SilentlyContinue | Where-Object { $_.Profile -eq 'Domain' }) }
+        TestScript = { return $null -ne (Get-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -ErrorAction SilentlyContinue | Where-Object { $_.Profile -eq 'Any' }) }
         SetScript  = { Set-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -Profile Any }
       }
     }
@@ -245,6 +245,15 @@ try {
       # When IsSQLSetup=$True, the override inside the if-block makes everything
       # wait for SqlSetup instead, preserving the install-then-configure ordering.
       $dependsOnSQLSetup = '[Service]SYSTEM_SvcTWerSvcDisableStopped'
+
+      # Credential the SQL-configuration resources (SqlLogin / SqlRole / SqlMemory
+      # / SqlMaxDop / SqlProtocolTcpIP) run under. With Windows authentication the
+      # effective SQL login is this RunAs account, so it MUST be a SQL sysadmin.
+      # SqlSetup grants sysadmin only to SQLSysAdminAccounts (= SQLSysAdministrators),
+      # so use $SETUP (svcspssetup), a member of that list. Do NOT use $ADSETUP here:
+      # it is not a SQL sysadmin, so it connects with no rights and every SqlXXX
+      # resource fails with 'Failed to connect to SQL instance'.
+      $sqlAdminCredential = $SETUP
       if ($Node.IsSQLSetup) {
         $dependsOnSQLSetup = '[SqlSetup]MIDDLEWARE_SqlMSSQLSERVER'
         SqlSetup MIDDLEWARE_SqlMSSQLSERVER {
@@ -279,12 +288,27 @@ try {
         }
       }
       if ($null -ne $sqlTcpPort) {
+        # Enable the TCP/IP protocol itself. SqlProtocolTcpIP below only sets the
+        # port on the IPAll group; without this the protocol stays DISABLED and
+        # the instance listens on no TCP port, so remote clients / the SharePoint
+        # SqlAlias fail with "SQL Server does not exist or access denied". Needs a
+        # service restart to take effect.
+        SqlProtocol MIDDLEWARE_SqlProtocolTcpEnabled {
+          DependsOn              = $dependsOnSQLSetup
+          PsDscRunAsCredential   = $sqlAdminCredential
+          InstanceName           = $sqlSPInstance
+          ProtocolName           = 'TcpIp'
+          Enabled                = $true
+          ListenOnAllIpAddresses = $true
+          RestartService         = $true
+        }
         SqlProtocolTcpIP MIDDLEWARE_SqlProtocolTcpIP {
-          DependsOn            = $dependsOnSQLSetup
-          PsDscRunAsCredential = $ADSETUP
+          DependsOn            = '[SqlProtocol]MIDDLEWARE_SqlProtocolTcpEnabled'
+          PsDscRunAsCredential = $sqlAdminCredential
           InstanceName         = $sqlSPInstance
           IpAddressGroup       = 'IPAll'
           TcpPort              = $sqlTcpPort
+          RestartService       = $true
         }
       }
       #Configure the SQL Server service
@@ -312,7 +336,7 @@ try {
       foreach ($sqlSysAdministrator in $Node.SQLSysAdministrators) {
         SqlLogin ('MIDDLEWARE_SqlLogin_' + $sqlSysAdministrator.Replace('\', '-')) {
           DependsOn            = $dependsOnSQLSetup
-          PsDscRunAsCredential = $ADSETUP
+          PsDscRunAsCredential = $sqlAdminCredential
           Ensure               = 'Present'
           Name                 = $sqlSysAdministrator
           LoginType            = 'WindowsUser'
@@ -324,35 +348,49 @@ try {
       SqlRole MIDDLEWARE_SqlSpsServerRole {
         DependsOn            = $dependsOnSQLSetup
         Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
+        PsDscRunAsCredential = $sqlAdminCredential
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance
         ServerRoleName       = 'sysadmin'
         MembersToInclude     = $Node.SQLSysAdministrators
       }
-      #Add the farm service account to the dbcreator and securityadmin roles
-      SqlLogin MIDDLEWARE_SqlLogin_FARM {
-        DependsOn            = $dependsOnSQLSetup
-        Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
-        Name                 = "$($FARM.UserName)"
-        LoginType            = 'WindowsUser'
-        ServerName           = $Node.NodeName
-        InstanceName         = $sqlSPInstance
+      #Add the farm service account to the dbcreator and securityadmin roles.
+      # The FARM login may already have been created by the SQLSysAdministrators
+      # loop above (when the farm account is also a SQL sysadmin, the default
+      # posture). Creating it again here would produce two SqlLogin resources for
+      # the same login, which DSC rejects ("conflicting values of
+      # PsDscRunAsCredential"). So create MIDDLEWARE_SqlLogin_FARM only when the
+      # farm account is NOT in SQLSysAdministrators, and point the role grants at
+      # whichever SqlLogin resource actually exists.
+      $farmIsSysAdmin = @($Node.SQLSysAdministrators) -contains $FARM.UserName
+      if ($farmIsSysAdmin) {
+        $farmLoginDependsOn = '[SqlLogin]MIDDLEWARE_SqlLogin_' + $FARM.UserName.Replace('\', '-')
+      }
+      else {
+        $farmLoginDependsOn = '[SqlLogin]MIDDLEWARE_SqlLogin_FARM'
+        SqlLogin MIDDLEWARE_SqlLogin_FARM {
+          DependsOn            = $dependsOnSQLSetup
+          Ensure               = 'Present'
+          PsDscRunAsCredential = $sqlAdminCredential
+          Name                 = "$($FARM.UserName)"
+          LoginType            = 'WindowsUser'
+          ServerName           = $Node.NodeName
+          InstanceName         = $sqlSPInstance
+        }
       }
       SqlRole MIDDLEWARE_SqlSpsServerRoleADMdbcreator {
-        DependsOn            = '[SqlLogin]MIDDLEWARE_SqlLogin_FARM'
+        DependsOn            = $farmLoginDependsOn
         Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
+        PsDscRunAsCredential = $sqlAdminCredential
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance
         ServerRoleName       = 'dbcreator'
         MembersToInclude     = "$($FARM.UserName)"
       }
       SqlRole MIDDLEWARE_SqlSpsServerRoleADMsecurityadmin {
-        DependsOn            = '[SqlLogin]MIDDLEWARE_SqlLogin_FARM'
+        DependsOn            = $farmLoginDependsOn
         Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
+        PsDscRunAsCredential = $sqlAdminCredential
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance
         ServerRoleName       = 'securityadmin'
@@ -363,7 +401,7 @@ try {
         SqlMemory MIDDLEWARE_SqlMaxMemory {
           DependsOn            = $dependsOnSQLSetup
           Ensure               = 'Present'
-          PsDscRunAsCredential = $ADSETUP
+          PsDscRunAsCredential = $sqlAdminCredential
           DynamicAlloc         = $true
           ServerName           = $Node.NodeName
           InstanceName         = $sqlSPInstance
@@ -373,7 +411,7 @@ try {
         SqlMemory MIDDLEWARE_SqlMaxMemory {
           DependsOn            = $dependsOnSQLSetup
           Ensure               = 'Present'
-          PsDscRunAsCredential = $ADSETUP
+          PsDscRunAsCredential = $sqlAdminCredential
           MaxMemory            = $Node.SQLMaxMemory
           ServerName           = $Node.NodeName
           InstanceName         = $sqlSPInstance
@@ -383,7 +421,7 @@ try {
       SqlMaxDop MIDDLEWARE_SqlMaxDopTo1 {
         DependsOn            = $dependsOnSQLSetup
         Ensure               = 'Present'
-        PsDscRunAsCredential = $ADSETUP
+        PsDscRunAsCredential = $sqlAdminCredential
         DynamicAlloc         = $false
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance

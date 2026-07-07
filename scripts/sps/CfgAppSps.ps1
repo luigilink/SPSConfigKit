@@ -284,7 +284,7 @@ try {
       #Enable Windows Firewall Remote Event Log Management
       Script SYSTEM_EnableRemoteEventLogManagement {
         GetScript  = { }
-        TestScript = { return $null -ne (Get-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -ErrorAction SilentlyContinue | Where-Object { $_.Profile -eq 'Domain' }) }
+        TestScript = { return $null -ne (Get-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -ErrorAction SilentlyContinue | Where-Object { $_.Profile -eq 'Any' }) }
         SetScript  = { Set-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -Profile Any }
       }
       #Install the Remote Server Administration Tools for Active Directory Domain Services Tools

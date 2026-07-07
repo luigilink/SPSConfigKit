@@ -17,10 +17,16 @@ This folder configures the two halves of a classic Windows DSC pull deployment:
 
 ## End-to-end workflow
 
-1. **Stand up the pull server** — on the pull server, compile and apply:
+1. **Stand up the pull server** — on the pull server, compile then apply the LCM
+   meta-configuration (so the LCM holds the `CertificateID` that decrypts the
+   encrypted MOF) before applying the configuration itself:
 
    ```powershell
    .\CfgAppPull.ps1
+   # Configure the LCM with the encryption certificate (skip only if document
+   # encryption is not enabled). Without this the apply fails with
+   # "The Local Configuration Manager is not configured with a certificate".
+   Set-DscLocalConfigurationManager -Path .\MOF -Verbose
    Start-DscConfiguration -Path .\MOF -Wait -Verbose -Force
    ```
 

@@ -91,22 +91,6 @@ try {
     throw "Missing $inputFile"
   }
 
-  # DRY: derive certificate paths from the single share root (NonNodeData.SourcePath)
-  # + each entry's CerFileName / PfxFileName, so the share host is defined only once.
-  # An explicit CertPath / PfxPath on an entry is still honoured (backward compatible).
-  $certSourcePath = $configurationData.NonNodeData.SourcePath
-  if ($configurationData.NonNodeData.ADC -and $configurationData.NonNodeData.ADC.certificates) {
-    foreach ($cert in $configurationData.NonNodeData.ADC.certificates) {
-      $certRoot = $certSourcePath.TrimEnd('\\')
-      if ([string]::IsNullOrWhiteSpace($cert.CertPath) -and -not [string]::IsNullOrWhiteSpace($cert.CerFileName)) {
-        $cert.CertPath = '{0}\{1}' -f $certRoot, $cert.CerFileName
-      }
-      if ([string]::IsNullOrWhiteSpace($cert.PfxPath) -and -not [string]::IsNullOrWhiteSpace($cert.PfxFileName)) {
-        $cert.PfxPath = '{0}\{1}' -f $certRoot, $cert.PfxFileName
-      }
-    }
-  }
-
   # DRY: derive the semantic Drives hashtable (Data/Logs/Temp -> letter) from the
   # authoritative NonNodeData.Disks list, so a drive letter is declared only once.
   # Temp falls back to the Data drive when no dedicated Temp disk is declared.
@@ -122,6 +106,32 @@ try {
     if ($byType.Logs) { $drives.Logs = $byType.Logs }
     $drives.Temp = if ($byType.Temp) { $byType.Temp } elseif ($byType.Data) { $byType.Data } else { $null }
     $configurationData.NonNodeData.Drives = $drives
+  }
+
+  # DRY: derive certificate paths from the LOCAL SoftwarePackages folder, NOT from
+  # NonNodeData.SourcePath. The pull server is the host of that share, so it must
+  # read its own .cer / .pfx locally: reaching them over its own UNC (\\PULL\...)
+  # is a chicken-and-egg (the share is published by this very MOF, so it does not
+  # exist at the first apply) and is pointless anyway. The local root is the Data
+  # drive + the last segment of SourcePath (e.g. F:\Softwarepackages). An explicit
+  # CertPath / PfxPath on an entry is still honoured (backward compatible).
+  $shareLeaf = ($configurationData.NonNodeData.SourcePath.TrimEnd('\') -split '\\')[-1]
+  $certRoot = if ($configurationData.NonNodeData.Drives -and $configurationData.NonNodeData.Drives.Data) {
+    '{0}\{1}' -f $configurationData.NonNodeData.Drives.Data, $shareLeaf
+  }
+  else {
+    # Fallback to the UNC share root if no Data drive could be derived.
+    $configurationData.NonNodeData.SourcePath.TrimEnd('\')
+  }
+  if ($configurationData.NonNodeData.ADC -and $configurationData.NonNodeData.ADC.certificates) {
+    foreach ($cert in $configurationData.NonNodeData.ADC.certificates) {
+      if ([string]::IsNullOrWhiteSpace($cert.CertPath) -and -not [string]::IsNullOrWhiteSpace($cert.CerFileName)) {
+        $cert.CertPath = '{0}\{1}' -f $certRoot, $cert.CerFileName
+      }
+      if ([string]::IsNullOrWhiteSpace($cert.PfxPath) -and -not [string]::IsNullOrWhiteSpace($cert.PfxFileName)) {
+        $cert.PfxPath = '{0}\{1}' -f $certRoot, $cert.PfxFileName
+      }
+    }
   }
 
   if ([string]::IsNullOrWhiteSpace($secretsFile)) {
@@ -202,6 +212,11 @@ try {
       LocalConfigurationManager {
         ConfigurationMode  = 'ApplyOnly'
         RebootNodeIfNeeded = $true
+        # Certificate the LCM uses to decrypt the encrypted credentials in this
+        # node's MOF. $Node.Thumbprint is injected into the wildcard block by
+        # Initialize-DscEncryption.ps1; without it the LCM cannot process an
+        # encrypted MOF ("LCM is not configured with a certificate").
+        CertificateID      = $Node.Thumbprint
       }
 
       #Stop unnecessary Windows Services
@@ -229,7 +244,7 @@ try {
       #Enable Windows Firewall Remote Event Log Management
       Script SYSTEM_EnableRemoteEventLogManagement {
         GetScript  = { }
-        TestScript = { return $null -ne (Get-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -ErrorAction SilentlyContinue | Where-Object { $_.Profile -eq 'Domain' }) }
+        TestScript = { return $null -ne (Get-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -ErrorAction SilentlyContinue | Where-Object { $_.Profile -eq 'Any' }) }
         SetScript  = { Set-NetFirewallRule -DisplayGroup 'Remote Event Log Management' -Enabled True -Profile Any }
       }
     }
@@ -377,6 +392,33 @@ try {
         IdentityType         = 'SpecificUser'
         ManagedRuntimeVersion = 'v4.0'
         AutoStart             = $true
+      }
+
+      # Publish the SoftwarePackages SMB share every node copies binaries and
+      # certificates from. The share name is the last segment of
+      # NonNodeData.SourcePath and the local folder lives on the Data drive, so
+      # the share is declared once. Read access defaults to 'Authenticated Users'
+      # and can be overridden with NonNodeData.SoftwarePackagesShare.ReadAccess.
+      $spShareName = ($ConfigurationData.NonNodeData.SourcePath.TrimEnd('\') -split '\\')[-1]
+      $spSharePath = Join-Path -Path $ConfigurationData.NonNodeData.Drives.Data -ChildPath $spShareName
+      $spReadAccess = if ($ConfigurationData.NonNodeData.SoftwarePackagesShare -and $ConfigurationData.NonNodeData.SoftwarePackagesShare.ReadAccess) {
+        @($ConfigurationData.NonNodeData.SoftwarePackagesShare.ReadAccess)
+      }
+      else {
+        @('Authenticated Users')
+      }
+      $spReadAccessLiteral = "'" + ($spReadAccess -join "','") + "'"
+
+      File PULLSERVER_SoftwarePackagesFolder {
+        Ensure          = 'Present'
+        Type            = 'Directory'
+        DestinationPath = $spSharePath
+      }
+      Script PULLSERVER_SoftwarePackagesShare {
+        DependsOn  = '[File]PULLSERVER_SoftwarePackagesFolder'
+        GetScript  = "@{ Result = (Get-SmbShare -Name '$spShareName' -ErrorAction SilentlyContinue).Path }"
+        TestScript = "`$s = Get-SmbShare -Name '$spShareName' -ErrorAction SilentlyContinue; (`$null -ne `$s) -and (`$s.Path -eq '$spSharePath')"
+        SetScript  = "`$s = Get-SmbShare -Name '$spShareName' -ErrorAction SilentlyContinue; if (`$s -and `$s.Path -ne '$spSharePath') { Remove-SmbShare -Name '$spShareName' -Force }; if (-not (Get-SmbShare -Name '$spShareName' -ErrorAction SilentlyContinue)) { New-SmbShare -Name '$spShareName' -Path '$spSharePath' -FullAccess 'BUILTIN\Administrators' -ReadAccess $spReadAccessLiteral | Out-Null }"
       }
     }
   }

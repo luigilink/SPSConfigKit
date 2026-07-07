@@ -38,8 +38,9 @@
         - expands ISO contents to the target folder when Extract = $true,
           using Windows' native Mount-DiskImage / Copy-Item / Dismount-DiskImage
           pipeline (no 7-Zip required)
-        - unblocks downloaded .exe files (extracted ISO content carries no
-          Mark-of-the-Web so does not need unblocking)
+        - unblocks downloaded .exe files AND the content extracted from ISOs
+          (mounting a downloaded ISO propagates the Mark-of-the-Web to the
+          copied files, so the setup binaries must be unblocked too)
 
   The Chocolatey and download phases are skipped automatically when the host
   has no outbound internet access. Per-package failures are caught and
@@ -68,6 +69,51 @@ Clear-Host
 # Force TLS 1.2 for Microsoft download CDNs (Windows Server 2016 and older
 # default to TLS 1.0/1.1 which the CDN rejects).
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+
+# Silence the Invoke-WebRequest progress bar. Windows PowerShell 5.1 redraws it
+# on every byte chunk, which makes large downloads CPU-bound on console
+# rendering rather than bandwidth-bound and slows them by an order of magnitude.
+$ProgressPreference = 'SilentlyContinue'
+
+function Invoke-SPSDownload {
+    <#
+    .SYNOPSIS
+      Downloads a file to disk, preferring BITS over Invoke-WebRequest.
+
+    .DESCRIPTION
+      Multi-GB ISOs (SQL Server, SharePoint Server, Language Packs) download much
+      faster and more reliably over BITS (Background Intelligent Transfer Service):
+      it is multi-part, resumable across a dropped Bastion/RDP session, and native
+      to Windows Server. When the BitsTransfer module or the BITS service is not
+      available (for example under PowerShell 7, or when blocked by GPO), the
+      function transparently falls back to Invoke-WebRequest.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [System.String]
+        $Uri,
+
+        [Parameter(Mandatory = $true)]
+        [System.String]
+        $OutFile
+    )
+
+    $bits = Get-Command -Name Start-BitsTransfer -ErrorAction SilentlyContinue
+    if ($bits) {
+        try {
+            Start-BitsTransfer -Source $Uri -Destination $OutFile -ErrorAction Stop
+            return
+        }
+        catch {
+            Write-Warning "BITS transfer failed ($($_.Exception.Message)). Falling back to Invoke-WebRequest."
+            # BITS can leave a partial .tmp next to the destination on failure.
+            Remove-Item -Path ('{0}.tmp' -f $OutFile) -ErrorAction SilentlyContinue
+        }
+    }
+
+    Invoke-WebRequest -Uri $Uri -OutFile $OutFile -UseBasicParsing
+}
 
 # Resolve a reliable base path even when $PSScriptRoot is empty (for example
 # when executed interactively).
@@ -185,7 +231,7 @@ if ($configurationData.SoftwarePackages.Count -ne 0) {
                 $fileTempPath = Join-Path -Path $env:TEMP -ChildPath $fileName
                 if (-not (Test-Path -Path $fileTempPath)) {
                     Write-Host "Downloading '$fileName' to '$fileTempPath'..."
-                    Invoke-WebRequest -Uri $url -OutFile $fileTempPath -UseBasicParsing
+                    Invoke-SPSDownload -Uri $url -OutFile $fileTempPath
                 }
                 else {
                     Write-Host "Found previously downloaded '$fileTempPath'. Reusing."
@@ -211,6 +257,15 @@ if ($configurationData.SoftwarePackages.Count -ne 0) {
                     Write-Host "Copying contents from '$source' to '$path'..."
                     Copy-Item -Path (Join-Path -Path $source -ChildPath '*') `
                         -Destination $path -Recurse -Force
+
+                    # Mounting a downloaded (MOTW-tagged) ISO and copying its
+                    # contents propagates the Zone.Identifier to every extracted
+                    # file, so the setup binaries (e.g. prerequisiteinstaller.exe)
+                    # stay blocked and SharePoint's SPInstallPrereqs fails. Unblock
+                    # the extracted content recursively.
+                    Write-Host "Unblocking extracted content under '$path'..."
+                    Get-ChildItem -Path $path -Recurse -File -ErrorAction SilentlyContinue |
+                        Unblock-File -ErrorAction SilentlyContinue
                 }
                 finally {
                     if ($mounted) {
@@ -232,7 +287,7 @@ if ($configurationData.SoftwarePackages.Count -ne 0) {
                 }
 
                 Write-Host "Downloading '$fileName' to '$filePath'..."
-                Invoke-WebRequest -Uri $url -OutFile $filePath -UseBasicParsing
+                Invoke-SPSDownload -Uri $url -OutFile $filePath
                 Unblock-File -Path $filePath
             }
         }

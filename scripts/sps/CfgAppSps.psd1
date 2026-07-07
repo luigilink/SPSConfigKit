@@ -64,13 +64,14 @@
     ManageDisks = $true
     # Data disks, initialised by scripts/init/Initialize-DscDisks.ps1 (keyed by disk Number).
     # Drives.{Data,Logs} letters consumed elsewhere are DERIVED from this by Type.
-    # NOTE: disk numbers are environment-specific. A plain VM is usually
-    #   0=OS, 1=Data, 2=Logs; an Azure VM WITH a temp disk shifts to
-    #   0=OS, 1=<temp>, 2=Data, 3=Logs — adjust Id to match 'Get-Disk'.
+    # NOTE: disk numbers are environment-specific. These defaults match a VM with
+    #   NO temp disk (0=OS, 1=Data, 2=Logs) — the SharePoint VM sizes used here.
+    #   An Azure VM WITH a temp disk shifts to 0=OS, 1=<temp>, 2=Data, 3=Logs (as
+    #   the PDC/PULL/SQL samples use) — adjust Id to match 'Get-Disk'.
     Disks       = @(
       @{ Id = '0'; Letter = 'C'; Type = 'OS'  ; FSLabel = 'SYSTEM'; AllocationUnitSize = 4KB   }
-      @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB   }
-      @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB   }
+      @{ Id = '1'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 4KB   }
+      @{ Id = '2'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 4KB   }
     )
     ADC         = @{
       certificates = @(
@@ -145,7 +146,7 @@
       # SourcePath                  = '\\PULL\Softwarepackages\OOS'
       # DestinationPath             = 'F:\SoftwarePackages\OOS'
       # Subfolders                  = @{ Binaries = 'BIN'; LanguagePack = 'LP'; CumulativeUpdate = 'CU' }
-      CUFileName                  = 'wacserver2019-kb5002752-fullfile-x64-glb.exe'
+      CUFileName                  = 'wacserver2019-kb5002871-fullfile-x64-glb.exe'
       URL                         = 'oosweb.contoso.com'
       CertFriendlyName            = 'OOSCertSSL'
       LogLocation                 = 'LOGS\OOS'
@@ -173,7 +174,7 @@
       LanguagePacks             = @('fr-fr')
       # CU package: either an absolute path (used as-is, current default) or a relative path
       # resolved under <DestinationPath>\<Subfolders.CumulativeUpdate>.
-      UberCumulativeUpdate      = '\\PULL\Softwarepackages\SPS\CU\uber-subscription-kb5002773-fullfile-x64-glb.exe'
+      UberCumulativeUpdate      = '\\PULL\Softwarepackages\SPS\CU\uber-subscription-kb5002863-fullfile-x64-glb.exe'
       FarmConfigDatabaseName    = 'DSPS_Admin_Config'
       AdminContentDatabaseName  = 'DSPS_Admin_Content'
       CentralAdministrationPort = '5555'

@@ -40,6 +40,16 @@
       DomainNetBIOSName = 'CONTOSO'
       DnsServerAddress  = '10.1.1.4'
     }
+    # DNS A records the domain controller publishes in the domain zone so the
+    # SharePoint web-application and Office Online host names resolve (farm
+    # creation binds them and otherwise fails with "The server did not respond").
+    # Name is the host label (the domain is appended); IPAddress is the target
+    # (WFE/VIP for the web app, the OOS server for Office Online). Omit or leave
+    # empty to publish no records.
+    DnsRecords = @(
+      @{ Name = 'sharepoint'; IPAddress = '10.1.1.27' }
+      @{ Name = 'oosweb'     ; IPAddress = '10.1.1.31' }
+    )
     ADC        = @{
       certificates = @(
         @{

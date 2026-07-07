@@ -72,6 +72,11 @@
     `Initialize-SoftwarePackages.psd1` downloads, so a fresh farm's patch step
     looked for a CU that was never fetched. Aligned to the downloaded CUs
     (SharePoint `kb5002863`, OOS `kb5002871`).
+- Dashboard shows a node's last real state while a run is in flight (#34)
+  - A node whose LCM is mid-consistency-check has an in-progress report on top
+    (no Status, sentinel `EndTime`); the dashboard picked it and showed `Unknown`,
+    hiding the real state. It now selects the most recent report with a definitive
+    Status (Success/Failure).
 - Dashboard renders node errors and timestamps cleanly (#25)
   - Failed-node error banners showed raw report JSON with undecoded `\uXXXX`
     escapes; they now display the human-readable `ErrorMessage`. A node with no

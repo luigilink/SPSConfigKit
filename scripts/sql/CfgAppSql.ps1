@@ -291,8 +291,9 @@ try {
         # Enable the TCP/IP protocol itself. SqlProtocolTcpIP below only sets the
         # port on the IPAll group; without this the protocol stays DISABLED and
         # the instance listens on no TCP port, so remote clients / the SharePoint
-        # SqlAlias fail with "SQL Server does not exist or access denied". Needs a
-        # service restart to take effect.
+        # SqlAlias fail with "SQL Server does not exist or access denied". The
+        # resource restarts the service by default (SuppressRestart defaults to $false)
+        # so the change takes effect.
         SqlProtocol MIDDLEWARE_SqlProtocolTcpEnabled {
           DependsOn              = $dependsOnSQLSetup
           PsDscRunAsCredential   = $sqlAdminCredential
@@ -300,7 +301,6 @@ try {
           ProtocolName           = 'TcpIp'
           Enabled                = $true
           ListenOnAllIpAddresses = $true
-          RestartService         = $true
         }
         SqlProtocolTcpIP MIDDLEWARE_SqlProtocolTcpIP {
           DependsOn            = '[SqlProtocol]MIDDLEWARE_SqlProtocolTcpEnabled'
@@ -308,7 +308,6 @@ try {
           InstanceName         = $sqlSPInstance
           IpAddressGroup       = 'IPAll'
           TcpPort              = $sqlTcpPort
-          RestartService       = $true
         }
       }
       #Configure the SQL Server service

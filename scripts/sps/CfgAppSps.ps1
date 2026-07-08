@@ -264,9 +264,26 @@ try {
     if ($sqlDbConnectionEncryption -notin $validDbEncryptionLevels) {
       throw ("NonNodeData.SQL.DatabaseConnectionEncryption '{0}' is invalid. Valid values: {1}." -f $sqlDbConnectionEncryption, ($validDbEncryptionLevels -join ', '))
     }
-    # Mandatory / Strict validate the SQL certificate's chain AND hostname, so the SQL
-    # certificate SAN must contain the name(s) SharePoint connects with (the SQL alias
-    # ServerName, e.g. SQL1 and SQL1.<domain>). Strict additionally requires SQL Server 2022+.
+    # Host name used to validate the SQL certificate when the level is Mandatory / Strict.
+    # SharePoint validates the certificate against the connection name; this kit connects
+    # through a SQL alias that does not match the SQL certificate SAN, so a name from the SAN
+    # (e.g. the SQL server FQDN) must be supplied. Empty for the default 'Optional' level
+    # (no validation). DatabaseServerCertificateHostName is only honoured at farm creation /
+    # join and is not tested for drift, so an empty value is a safe no-op.
+    $sqlDbCertHostName = if ($ConfigurationData.NonNodeData.SQL -and $ConfigurationData.NonNodeData.SQL.DatabaseServerCertificateHostName) {
+      $ConfigurationData.NonNodeData.SQL.DatabaseServerCertificateHostName
+    }
+    else {
+      ''
+    }
+    # Fail-fast: Mandatory / Strict validate the certificate host name, so they require a
+    # DatabaseServerCertificateHostName (the SQL alias never matches the certificate SAN).
+    if ($sqlDbConnectionEncryption -in @('Mandatory', 'Strict') -and [string]::IsNullOrWhiteSpace($sqlDbCertHostName)) {
+      throw ("NonNodeData.SQL.DatabaseConnectionEncryption '{0}' requires NonNodeData.SQL.DatabaseServerCertificateHostName to be set to a name present in the SQL certificate SAN (the SQL alias does not match it)." -f $sqlDbConnectionEncryption)
+    }
+    # NOTE: DatabaseConnectionEncryption is honoured only when the configuration database is
+    # first created / joined (SPFarm does not test it for drift), so raising the level on an
+    # already-joined farm has no effect until the farm is rebuilt.
 
     # Fail-fast guard: NonNodeData.OOS.AllServers feeds the Servers list of the OOS CU
     # install (OfficeOnlineServerProductUpdate). Every node carrying the IsOOSServer role
@@ -596,6 +613,7 @@ try {
         RunCentralAdmin              = $true
         ServerRole                   = $Node.SPServerRole
         DatabaseConnectionEncryption = $sqlDbConnectionEncryption
+        DatabaseServerCertificateHostName = $sqlDbCertHostName
       }
       # Add SharePoint Managed Account.
       # Allowlist of Secrets.psd1 entries that SharePoint owns as Managed Accounts.
@@ -1167,6 +1185,7 @@ try {
         RunCentralAdmin              = $false
         ServerRole                   = $Node.SPServerRole
         DatabaseConnectionEncryption = $sqlDbConnectionEncryption
+        DatabaseServerCertificateHostName = $sqlDbCertHostName
       }
       #Distributed Cache Service Configuration
       if ($null -eq $Node.CacheSize) {

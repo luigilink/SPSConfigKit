@@ -582,6 +582,17 @@ Describe 'SQL connection encryption' -Skip:(-not $hasSqlEncryption) {
       Set-ItResult -Skipped -Because 'DatabaseConnectionEncryption is not declared (defaults to Optional)'
     }
   }
+
+  It 'Mandatory / Strict declare DatabaseServerCertificateHostName' {
+    $level = $script:ConfigData.NonNodeData.SQL.DatabaseConnectionEncryption
+    if ($level -in @('Mandatory', 'Strict')) {
+      $script:ConfigData.NonNodeData.SQL.DatabaseServerCertificateHostName |
+        Should -Not -BeNullOrEmpty -Because 'the SQL alias never matches the certificate SAN, so the host name to validate must be supplied'
+    }
+    else {
+      Set-ItResult -Skipped -Because 'DatabaseServerCertificateHostName is only required for Mandatory / Strict'
+    }
+  }
 }
 
 # ===========================================================================

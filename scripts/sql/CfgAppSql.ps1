@@ -547,6 +547,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE [name] = N'CommandExecute' AND [t
           Ensure          = 'Present'
         }
         SqlScript MIDDLEWARE_SqlMaintenanceSolution {
+          Id                   = 'MIDDLEWARE_SqlMaintenanceSolution'
           DependsOn            = $dependsOnSQLSetup, '[File]APPLICATION_SqlGetSources', '[File]MIDDLEWARE_SqlMaintenanceTestScript'
           PsDscRunAsCredential = $sqlAdminCredential
           InstanceName         = $sqlSPInstance

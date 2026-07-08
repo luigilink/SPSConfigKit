@@ -247,6 +247,44 @@ try {
     # legitimately omit). Mirrors the IsOOSServer gating of the OOS install Node block.
     $hasOOSNode = @($AllNodes.Where{ $_.IsOOSServer }).Count -gt 0
 
+    # SharePoint <-> SQL connection encryption level applied to the SPFarm resource.
+    # SharePoint Subscription Edition 25H1+ (and mandatory from the 2025-08 PU) requires
+    # DatabaseConnectionEncryption to be set on SPFarm; valid values are Optional / Mandatory
+    # / Strict. Driven by NonNodeData.SQL.DatabaseConnectionEncryption so a customer can raise
+    # it to Mandatory / Strict (both validate the SQL certificate chain — see the SQL cert
+    # imported into LocalMachine\Root below). Defaults to 'Optional' (encrypts when the SQL
+    # server forces it, without certificate validation).
+    $sqlDbConnectionEncryption = if ($ConfigurationData.NonNodeData.SQL -and $ConfigurationData.NonNodeData.SQL.DatabaseConnectionEncryption) {
+      $ConfigurationData.NonNodeData.SQL.DatabaseConnectionEncryption
+    }
+    else {
+      'Optional'
+    }
+    $validDbEncryptionLevels = @('Optional', 'Mandatory', 'Strict')
+    if ($sqlDbConnectionEncryption -notin $validDbEncryptionLevels) {
+      throw ("NonNodeData.SQL.DatabaseConnectionEncryption '{0}' is invalid. Valid values: {1}." -f $sqlDbConnectionEncryption, ($validDbEncryptionLevels -join ', '))
+    }
+    # Host name used to validate the SQL certificate when the level is Mandatory / Strict.
+    # SharePoint validates the certificate against the connection name; this kit connects
+    # through a SQL alias that does not match the SQL certificate SAN, so a name from the SAN
+    # (e.g. the SQL server FQDN) must be supplied. Empty for the default 'Optional' level
+    # (no validation). DatabaseServerCertificateHostName is only honoured at farm creation /
+    # join and is not tested for drift, so an empty value is a safe no-op.
+    $sqlDbCertHostName = if ($ConfigurationData.NonNodeData.SQL -and $ConfigurationData.NonNodeData.SQL.DatabaseServerCertificateHostName) {
+      $ConfigurationData.NonNodeData.SQL.DatabaseServerCertificateHostName
+    }
+    else {
+      ''
+    }
+    # Fail-fast: Mandatory / Strict validate the certificate host name, so they require a
+    # DatabaseServerCertificateHostName (the SQL alias never matches the certificate SAN).
+    if ($sqlDbConnectionEncryption -in @('Mandatory', 'Strict') -and [string]::IsNullOrWhiteSpace($sqlDbCertHostName)) {
+      throw ("NonNodeData.SQL.DatabaseConnectionEncryption '{0}' requires NonNodeData.SQL.DatabaseServerCertificateHostName to be set to a name present in the SQL certificate SAN (the SQL alias does not match it)." -f $sqlDbConnectionEncryption)
+    }
+    # NOTE: DatabaseConnectionEncryption is honoured only when the configuration database is
+    # first created / joined (SPFarm does not test it for drift), so raising the level on an
+    # already-joined farm has no effect until the farm is rebuilt.
+
     # Fail-fast guard: NonNodeData.OOS.AllServers feeds the Servers list of the OOS CU
     # install (OfficeOnlineServerProductUpdate). Every node carrying the IsOOSServer role
     # must appear in that list, otherwise the cumulative update is applied to an incomplete
@@ -361,6 +399,28 @@ try {
           UseDynamicTcpPort = $False
           Name              = $aliasSQL.ServerAlias
           ServerName        = "$($aliasSQL.ServerName)\$($aliasSQL.InstanceName)"
+        }
+      }
+
+      # Trust the SQL Server TLS certificate. When the SQL tier forces connection
+      # encryption (NonNodeData.SQL.ForceEncryption), SharePoint refuses to connect
+      # unless it trusts the SQL certificate's chain. Import the SQL certificate's
+      # public .cer into LocalMachine\Root so every SharePoint node trusts it. Gated on
+      # the same flag as the SQL side so the two stay in lock-step (both opt-in together).
+      if ($ConfigurationData.NonNodeData.SQL -and $ConfigurationData.NonNodeData.SQL.ForceEncryption) {
+        $spSqlCertName = if ($ConfigurationData.NonNodeData.SQL.CertificateName) { $ConfigurationData.NonNodeData.SQL.CertificateName } else { 'SQLServerCert' }
+        $spSqlCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq $spSqlCertName }
+        if ($null -eq $spSqlCertInfo) {
+          throw ("NonNodeData.SQL.ForceEncryption is enabled but no ADC certificate named '{0}' was found in NonNodeData.ADC.certificates (needed so SharePoint trusts the SQL TLS certificate)." -f $spSqlCertName)
+        }
+        $spSqlCertThumbprint = Get-CertThumbprint -CertPath "$($spSqlCertInfo.CertPath)"
+        #Import the SQL Server certificate into LocalMachine\Root (public key only, no password)
+        CertificateImport MIDDLEWARE_TrustSqlServerCert {
+          Thumbprint = $spSqlCertThumbprint.Thumbprint
+          Path       = "$($spSqlCertInfo.CertPath)"
+          Location   = 'LocalMachine'
+          Store      = 'Root'
+          Ensure     = 'Present'
         }
       }
 
@@ -552,7 +612,8 @@ try {
         CentralAdministrationPort    = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
         RunCentralAdmin              = $true
         ServerRole                   = $Node.SPServerRole
-        DatabaseConnectionEncryption = 'Optional'
+        DatabaseConnectionEncryption = $sqlDbConnectionEncryption
+        DatabaseServerCertificateHostName = $sqlDbCertHostName
       }
       # Add SharePoint Managed Account.
       # Allowlist of Secrets.psd1 entries that SharePoint owns as Managed Accounts.
@@ -1123,7 +1184,8 @@ try {
         CentralAdministrationPort    = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
         RunCentralAdmin              = $false
         ServerRole                   = $Node.SPServerRole
-        DatabaseConnectionEncryption = 'Optional'
+        DatabaseConnectionEncryption = $sqlDbConnectionEncryption
+        DatabaseServerCertificateHostName = $sqlDbCertHostName
       }
       #Distributed Cache Service Configuration
       if ($null -eq $Node.CacheSize) {

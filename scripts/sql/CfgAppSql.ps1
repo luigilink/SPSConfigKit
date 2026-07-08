@@ -91,6 +91,22 @@ try {
     throw "Missing $inputFile"
   }
 
+  # DRY: derive certificate paths from the single share root (NonNodeData.SourcePath)
+  # + each entry's CerFileName / PfxFileName, so the share host is defined only once.
+  # An explicit CertPath / PfxPath on an entry is still honoured (backward compatible).
+  $certSourcePath = $configurationData.NonNodeData.SourcePath
+  if ($configurationData.NonNodeData.ADC -and $configurationData.NonNodeData.ADC.certificates) {
+    foreach ($cert in $configurationData.NonNodeData.ADC.certificates) {
+      $certRoot = $certSourcePath.TrimEnd('\')
+      if ([string]::IsNullOrWhiteSpace($cert.CertPath) -and -not [string]::IsNullOrWhiteSpace($cert.CerFileName)) {
+        $cert.CertPath = '{0}\{1}' -f $certRoot, $cert.CerFileName
+      }
+      if ([string]::IsNullOrWhiteSpace($cert.PfxPath) -and -not [string]::IsNullOrWhiteSpace($cert.PfxFileName)) {
+        $cert.PfxPath = '{0}\{1}' -f $certRoot, $cert.PfxFileName
+      }
+    }
+  }
+
   # DRY: derive the semantic Drives hashtable (Data/Logs/Temp -> letter) from the
   # authoritative NonNodeData.Disks list, so a drive letter is declared only once.
   # Temp falls back to the Data drive when no dedicated Temp disk is declared.
@@ -139,6 +155,34 @@ try {
   }
   if (-not (Test-Path -Path $mofOutputPath)) {
     New-Item -Path $mofOutputPath -ItemType Directory | Out-Null
+  }
+
+  function Get-CertThumbprint() {
+    param
+    (
+      [parameter(Mandatory = $true)]
+      [System.String]
+      $CertPath
+    )
+    try {
+      $certObject = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+      $certObject.Import($CertPath, "", 'DefaultKeySet')
+      $item = Get-Item $CertPath
+      return @{
+        Error      = $false
+        Thumbprint = $certObject.Thumbprint
+        BaseName   = $item.BaseName
+      }
+    }
+    catch {
+      Write-Warning $_.Exception.Message
+      Write-Warning "$CertPath was not found"
+      return @{
+        Error      = $true
+        Thumbprint = "0000000000000000000000000000000000000000"
+        BaseName   = "ERROR"
+      }
+    }
   }
 
   Configuration CfgAppSql {
@@ -425,6 +469,97 @@ try {
         ServerName           = $Node.NodeName
         InstanceName         = $sqlSPInstance
         MaxDop               = 1
+      }
+      # Force TLS encryption of SQL Server connections (opt-in via NonNodeData.SQL.ForceEncryption).
+      # Existing farms are unaffected while the flag is absent / $false. The certificate is the
+      # pre-staged PFX distributed on the SoftwarePackages share (SQLServerCert by default, already
+      # declared in ADC.certificates with its password in Secrets.psd1). NOTE: the SharePoint /
+      # client side must trust this certificate (its issuing CA present in the client's
+      # LocalMachine\Root), otherwise SharePoint connects with "certificate chain not trusted".
+      if ($sqlConfig.ForceEncryption) {
+        $sqlCertName = if ($sqlConfig.CertificateName) { $sqlConfig.CertificateName } else { 'SQLServerCert' }
+        $sqlCertInfo = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq $sqlCertName }
+        if ($null -eq $sqlCertInfo) {
+          throw ("NonNodeData.SQL.ForceEncryption is enabled but no ADC certificate named '{0}' was found in NonNodeData.ADC.certificates." -f $sqlCertName)
+        }
+        # Resolve the real thumbprint from the .cer so SqlSecureConnection binds the exact cert
+        # (unlike auto-enrollment setups that pass the subject; here the PFX is known in advance).
+        $sqlCertThumbprint = Get-CertThumbprint -CertPath "$($sqlCertInfo.CertPath)"
+        #Import the SQL TLS certificate into LocalMachine\My
+        PfxImport MIDDLEWARE_SqlCertificateImport {
+          DependsOn  = $dependsOnSQLSetup
+          Thumbprint = $sqlCertThumbprint.Thumbprint
+          Path       = "$($sqlCertInfo.PfxPath)"
+          Store      = 'My'
+          Location   = 'LocalMachine'
+          # Per-cert PFX password: resolves the PSCredential auto-materialised by the secrets loader
+          # in Secrets.psd1 (Name = $sqlCertInfo.Name, i.e. 'SQLServerCert').
+          Credential = (Get-Variable -Name $sqlCertInfo.Name -ValueOnly)
+          Exportable = $true
+          Ensure     = 'Present'
+        }
+        #Bind the certificate to the SQL instance and force encryption. SqlSecureConnection grants
+        # the ServiceAccount read access to the private key and restarts the engine to apply.
+        SqlSecureConnection MIDDLEWARE_SqlForceEncryption {
+          DependsOn            = '[PfxImport]MIDDLEWARE_SqlCertificateImport'
+          PsDscRunAsCredential = $sqlAdminCredential
+          InstanceName         = $sqlSPInstance
+          Thumbprint           = $sqlCertThumbprint.Thumbprint
+          ForceEncryption      = $true
+          Ensure               = 'Present'
+          ServiceAccount       = $SQLSERVER.UserName
+          ServerName           = $Node.NodeName
+        }
+      }
+      # Install the Ola Hallengren SQL Server Maintenance Solution (opt-in via
+      # NonNodeData.SQL.InstallMaintenanceSolution). The MaintenanceSolution.sql is NOT
+      # bundled with the kit (respect Ola's licence): Initialize-SoftwarePackages downloads
+      # it from https://ola.hallengren.com onto the SoftwarePackages share in the SQL source
+      # folder, so the existing APPLICATION_SqlGetSources copy already places it on the node.
+      # A SqlScript resource runs it under the SQL sysadmin RunAs; a tiny generated test
+      # script makes the apply idempotent (skipped once the CommandExecute procedure exists
+      # in the target database).
+      if ($sqlConfig.InstallMaintenanceSolution) {
+        $maintConfig = if ($sqlConfig.MaintenanceSolution) { $sqlConfig.MaintenanceSolution } else { @{} }
+        $maintScriptName = if ($maintConfig.ScriptFileName) { $maintConfig.ScriptFileName } else { 'MaintenanceSolution.sql' }
+        $maintDatabase = if ($maintConfig.DatabaseName) { $maintConfig.DatabaseName } else { 'master' }
+        # The Ola .sql: an explicit SourcePath wins, otherwise the copy staged by
+        # APPLICATION_SqlGetSources under the local SQL destination folder.
+        $maintSetFilePath = if ($maintConfig.SourcePath) {
+          $maintConfig.SourcePath
+        }
+        else {
+          Join-Path $sqlDestinationPath $maintScriptName
+        }
+        # Test script (generated on the node): returns a row when the solution is NOT yet
+        # installed, so SqlScript runs Set; returns nothing once CommandExecute exists.
+        $maintTestFilePath = Join-Path $sqlDestinationPath 'Test-MaintenanceSolutionInstalled.sql'
+        $maintTestQuery = @"
+USE [$maintDatabase];
+IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE [name] = N'CommandExecute' AND [type] = N'P')
+    SELECT 1 AS NotInstalled;
+"@
+        File MIDDLEWARE_SqlMaintenanceTestScript {
+          DestinationPath = $maintTestFilePath
+          Contents        = $maintTestQuery
+          Type            = 'File'
+          Force           = $true
+          Ensure          = 'Present'
+        }
+        SqlScript MIDDLEWARE_SqlMaintenanceSolution {
+          Id                   = 'MIDDLEWARE_SqlMaintenanceSolution'
+          DependsOn            = $dependsOnSQLSetup, '[File]APPLICATION_SqlGetSources', '[File]MIDDLEWARE_SqlMaintenanceTestScript'
+          PsDscRunAsCredential = $sqlAdminCredential
+          InstanceName         = $sqlSPInstance
+          ServerName           = $Node.NodeName
+          SetFilePath          = $maintSetFilePath
+          TestFilePath         = $maintTestFilePath
+          GetFilePath          = $maintTestFilePath
+          # Local connection; Optional avoids a certificate-validation failure regardless of
+          # whether ForceEncryption is enabled on the instance.
+          Encrypt              = 'Optional'
+          QueryTimeout         = 0
+        }
       }
       # Open port on the firewall only when everything is ready, as SharePoint DSC is testing it to start creating the farm.
       # Gated on $sqlTcpPort so the DependsOn / LocalPort references stay valid only when SqlProtocolTcpIP is also emitted.

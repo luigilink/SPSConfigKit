@@ -38,6 +38,20 @@
       @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 64KB  }
       @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 64KB  }
     )
+    # Certificate distribution (mirrors CfgAppSps ADC block). Paths are derived from
+    # NonNodeData.SourcePath + CerFileName / PfxFileName by CfgAppSql.ps1, and each
+    # entry's PFX password comes from the matching Secrets.psd1 serviceAccount (Name).
+    # Only consumed when NonNodeData.SQL.ForceEncryption is enabled below.
+    ADC         = @{
+      certificates = @(
+        @{
+          Name         = 'SQLServerCert'
+          FriendlyName = 'SQLCertSSL'
+          CerFileName  = 'SQLServer.cer'
+          PfxFileName  = 'SQLServer.pfx'
+        }
+      )
+    }
     # Optional installation-media path overrides for customers whose file hierarchy
     # differs from the kit's defaults. When omitted the script falls back to:
     #   SourcePath      = <NonNodeData.SourcePath>\SQL
@@ -46,6 +60,37 @@
     SQL         = @{
       # SourcePath      = '\\PULL\Softwarepackages\SQL'
       # DestinationPath = 'F:\SoftwarePackages\SQL'
+      # TLS encryption of SQL Server connections (secure-by-default in this kit). When
+      # $true, CfgAppSql imports CertificateName (an ADC.certificates entry, default
+      # 'SQLServerCert') into LocalMachine\My, binds it to the instance and enables
+      # ForceEncryption. The SharePoint nodes must trust the certificate's issuing CA
+      # (its root in their LocalMachine\Root) or connections fail with a certificate-chain
+      # error — CfgAppSps imports the SQL certificate there under the same flag. Set to
+      # $false only if you deliberately want unencrypted SQL connections.
+      ForceEncryption = $true
+      CertificateName = 'SQLServerCert'
+      # Ola Hallengren SQL Server Maintenance Solution (https://ola.hallengren.com).
+      # Opt-in (default $false): when $true, CfgAppSql runs the pre-staged
+      # MaintenanceSolution.sql via a SqlScript resource, creating the DatabaseBackup /
+      # IndexOptimize / DatabaseIntegrityCheck procedures and the SQL Agent jobs. The
+      # execution is idempotent (skipped once the CommandExecute procedure exists).
+      #
+      # The .sql is NOT bundled with this kit (respect Ola's licence / attribution).
+      # Initialize-SoftwarePackages downloads MaintenanceSolution.sql from
+      # https://ola.hallengren.com into the SQL source folder (<SourcePath>\SQL); it is
+      # then staged to the node by the existing File copy. To tune it, edit the DECLARE
+      # parameters at the top of that file (backup directory, cleanup/retention time,
+      # output directory, LogToTable, CreateJobs) before staging — see scripts/sql/README.md.
+      InstallMaintenanceSolution = $false
+      MaintenanceSolution        = @{
+        # File name of the pre-staged Ola script (looked up under the staged SQL folder).
+        ScriptFileName = 'MaintenanceSolution.sql'
+        # Database in which the maintenance objects are created (Ola's default is master).
+        DatabaseName   = 'master'
+        # Optional full path override for the .sql (UNC or local). When omitted the file is
+        # read from the staged SQL folder (<Drives.Data>\SoftwarePackages\SQL\<ScriptFileName>).
+        # SourcePath   = '\\PULL\Softwarepackages\SQL\MaintenanceSolution.sql'
+      }
     }
   }
 }

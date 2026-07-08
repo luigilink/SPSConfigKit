@@ -54,7 +54,15 @@ BeforeDiscovery {
   $hasSps = [bool]$cfg.NonNodeData.SharePoint
   $hasSearchTopology = [bool]$cfg.NonNodeData.SharePoint.Services.SearchService
   $hasOos = [bool]$cfg.NonNodeData.OOS
-  $hasSql = [bool]$cfg.NonNodeData.SQL -or ($cfg.AllNodes | Where-Object IsSQLServer)
+  # SQL *tier* detection = an actual SQL node. NonNodeData.SQL alone is NOT sufficient:
+  # the SharePoint config also declares a NonNodeData.SQL block (ForceEncryption flag) so
+  # it can trust the SQL certificate, but it has no IsSQLServer node and must not trigger
+  # the SQL role / SQL install Describe blocks.
+  $hasSql = [bool]($cfg.AllNodes | Where-Object IsSQLServer)
+  # SQL connection-encryption opt-in (may be declared by BOTH the SQL and SharePoint configs).
+  $hasSqlEncryption = [bool]$cfg.NonNodeData.SQL.ForceEncryption
+  # SQL maintenance-plan opt-in (Ola Hallengren solution).
+  $hasSqlMaintenance = [bool]$cfg.NonNodeData.SQL.InstallMaintenanceSolution
   $hasAdc = [bool]$cfg.NonNodeData.ADC
   $hasAliases = [bool]$cfg.NonNodeData.SQLAlias
   # Source media is only relevant to product configs that copy install bits
@@ -552,6 +560,55 @@ Describe 'SQL configuration' -Skip:(-not $hasSql) {
     It 'SourcePath contains setup.exe at its root' {
       Test-Path -LiteralPath (Join-Path $script:SqlPaths.Source 'setup.exe') | Should -BeTrue
     }
+  }
+}
+
+# ===========================================================================
+# 8b. SQL connection encryption (declared by the SQL and/or SharePoint config)
+# ===========================================================================
+Describe 'SQL connection encryption' -Skip:(-not $hasSqlEncryption) {
+  It 'CertificateName resolves to an ADC certificate' {
+    $certName = if ($script:ConfigData.NonNodeData.SQL.CertificateName) { $script:ConfigData.NonNodeData.SQL.CertificateName } else { 'SQLServerCert' }
+    $names = @($script:ConfigData.NonNodeData.ADC.certificates | ForEach-Object Name)
+    $names | Should -Contain $certName -Because 'ForceEncryption imports/binds (SQL) or trusts (SharePoint) this certificate'
+  }
+
+  It 'DatabaseConnectionEncryption, when set, is Optional / Mandatory / Strict' {
+    $level = $script:ConfigData.NonNodeData.SQL.DatabaseConnectionEncryption
+    if ($null -ne $level) {
+      $level | Should -BeIn @('Optional', 'Mandatory', 'Strict')
+    }
+    else {
+      Set-ItResult -Skipped -Because 'DatabaseConnectionEncryption is not declared (defaults to Optional)'
+    }
+  }
+
+  It 'Mandatory / Strict declare DatabaseServerCertificateHostName' {
+    $level = $script:ConfigData.NonNodeData.SQL.DatabaseConnectionEncryption
+    if ($level -in @('Mandatory', 'Strict')) {
+      $script:ConfigData.NonNodeData.SQL.DatabaseServerCertificateHostName |
+        Should -Not -BeNullOrEmpty -Because 'the SQL alias never matches the certificate SAN, so the host name to validate must be supplied'
+    }
+    else {
+      Set-ItResult -Skipped -Because 'DatabaseServerCertificateHostName is only required for Mandatory / Strict'
+    }
+  }
+}
+
+# ===========================================================================
+# 8c. SQL maintenance plan (Ola Hallengren) - opt-in
+# ===========================================================================
+Describe 'SQL maintenance plan' -Skip:(-not $hasSqlMaintenance) {
+  It 'declares a MaintenanceSolution.ScriptFileName ending in .sql' {
+    $maint = $script:ConfigData.NonNodeData.SQL.MaintenanceSolution
+    $name = if ($maint -and $maint.ScriptFileName) { $maint.ScriptFileName } else { 'MaintenanceSolution.sql' }
+    $name | Should -Match '\.sql$'
+  }
+
+  It 'declares a non-empty target DatabaseName' {
+    $maint = $script:ConfigData.NonNodeData.SQL.MaintenanceSolution
+    $db = if ($maint -and $maint.DatabaseName) { $maint.DatabaseName } else { 'master' }
+    $db | Should -Not -BeNullOrEmpty
   }
 }
 

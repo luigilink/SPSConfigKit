@@ -22,6 +22,14 @@
       Extract = $false
       Path = 'SQL\CU'
     },
+    @{
+      Name = 'OlaHallengrenMaintenanceSolution'
+      Description = 'Ola Hallengren SQL Server Maintenance Solution (c) Ola Hallengren - https://ola.hallengren.com'
+      FileName = 'MaintenanceSolution.sql'
+      Url = 'https://ola.hallengren.com/scripts/MaintenanceSolution.sql'
+      Extract = $false
+      Path = 'SQL'
+    },
     @{ 
       Name = 'SharePointServerSE'
       Description = 'SharePoint Server Subscription Edition'

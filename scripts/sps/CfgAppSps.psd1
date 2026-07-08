@@ -101,6 +101,33 @@
         }
       )
     }
+    # SQL Server connection encryption. Must stay in sync with CfgAppSql.psd1's
+    # NonNodeData.SQL block: when the SQL tier forces encryption (ForceEncryption), the
+    # traffic is encrypted regardless of the level below, and SharePoint imports the SQL
+    # certificate (CertificateName, an ADC.certificates entry) into LocalMachine\Root so it
+    # trusts the SQL TLS chain. Set both sides to $false together to disable encryption.
+    #
+    # DatabaseConnectionEncryption is applied to the SPFarm resource (SharePoint SE 25H1+):
+    #   Optional  - encrypts without validating the SQL certificate (default; robust with a
+    #               SQL alias and applies on both new and existing farms).
+    #   Mandatory - encrypts AND validates the certificate chain + host name.
+    #   Strict    - as Mandatory over TDS 8.0; requires SQL Server 2022+.
+    # NOTE 1: DatabaseConnectionEncryption is honoured only when the configuration database
+    #   is first created / joined. On an already-joined farm SPFarm ignores changes to it,
+    #   so raising the level on an existing farm has no effect (rebuild to change it).
+    # NOTE 2: Mandatory / Strict validate the certificate against the connection name. This
+    #   kit connects through a SQL alias (SQLAlias below), which does not match the SQL
+    #   certificate SAN (sql1 / sql1.<domain>). For Mandatory / Strict you MUST set
+    #   DatabaseServerCertificateHostName to a name present in that SAN, or farm creation
+    #   fails certificate validation.
+    SQL        = @{
+      ForceEncryption              = $true
+      CertificateName              = 'SQLServerCert'
+      DatabaseConnectionEncryption = 'Optional'
+      # Required for Mandatory / Strict; must match the SQL certificate SAN (e.g. the SQL
+      # server FQDN), not the SQL alias. Ignored for the default 'Optional' level.
+      # DatabaseServerCertificateHostName = 'sql1.contoso.com'
+    }
     SQLAlias   = @(
       @{
         Name         = 'ADMIN'

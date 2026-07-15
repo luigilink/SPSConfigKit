@@ -81,6 +81,46 @@ Example:
 > pulls from your secret store (Azure Key Vault, CyberArk, etc.) before the
 > file is read in any environment.
 
+### Which brick each account belongs to
+
+> [!IMPORTANT]
+> The bundled `Secrets.psd1` is an **example that lists EVERY account for EVERY
+> brick of the kit — including bricks you do not deploy.** Declaring an account
+> here does **not** mean it is used: for the SharePoint brick, only the accounts
+> listed in the [`SharePoint.ManagedAccounts` allowlist](#key-conventions) are
+> actually registered on the farm. Accounts that belong to a brick you are not
+> deploying (for example the PULL server or the lab AD/PDC) can simply be left
+> untouched or removed.
+
+The table below maps every account in the sample `Secrets.psd1` to the brick
+that consumes it, so you can tell at a glance whether a given account is
+relevant to your deployment.
+
+| Account                                                                                         | Brick (config)          | Optional?                        |
+| ----------------------------------------------------------------------------------------------- | ----------------------- | -------------------------------- |
+| `ADSETUP`, `ADSAFEMODE`                                                                          | AD / PDC (`CfgAppPdc`)  | **Yes** — lab / demo domain only |
+| `SQLSERVER`, `SQLServerCert`                                                                     | SQL (`CfgAppSql`)       | No (standard deployment)         |
+| `PULLSETUP`, `IISPULLAPP`, `DscPullCert`                                                         | PULL server (`CfgAppPull`) | **Yes** — only when a node declares `IsPullServer` |
+| `SETUP`, `FARM`, `IISAPP`, `SEARCH`, `CONTENT`, `SUPERUSER`, `SUPEREADER`, `Passphrase`, `SharePointCert`, `OfficeOnlineCert` | SharePoint (`CfgAppSps`) | No — core farm accounts          |
+
+- The **AD / PDC** brick provisions an Active Directory domain controller. It is
+  meant for labs and demos; in production the domain already exists, so these
+  accounts are not used.
+- The **PULL server** brick is only compiled when at least one node is flagged
+  `IsPullServer`. If you deploy in push mode, `PULLSETUP`, `IISPULLAPP` and
+  `DscPullCert` are never consumed.
+- The **SharePoint** brick is the core of the kit. `SETUP` is the SharePoint
+  installation account; the remaining accounts are the farm / service / app-pool
+  identities actually used to build the farm.
+
+> [!NOTE]
+> Even within the SharePoint brick, the accounts registered as
+> `SPManagedAccount` resources are filtered by the
+> [`SharePoint.ManagedAccounts` allowlist](#key-conventions) (default
+> `@('FARM', 'IISAPP', 'SEARCH')`). Anything outside that allowlist — including
+> the PULL / SQL / OOS accounts above — is intentionally ignored and never
+> reaches the SharePoint MOF.
+
 ### How the loader uses `IsAdAccount`
 
 - `IsAdAccount -ne $false` is the filter that selects AD accounts. Because

@@ -117,9 +117,18 @@ function Get-ModuleFromConfiguration {
   param([System.String] $Path)
   $tokens = $null; $errors = $null
   $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$errors)
+  # Inside a `Configuration { }` block on Windows PowerShell 5.1 (with PSDesiredStateConfiguration
+  # loaded), `Configuration` is a DSC dynamic keyword, so `Import-DscResource` is parsed as a
+  # DynamicKeywordStatementAst rather than a CommandAst. When the file is parsed without the
+  # Configuration keyword registered it stays a CommandAst. Match both so the module list is
+  # resolved in either parsing context (otherwise nothing is published from the config script).
   $commands = $ast.FindAll({
-      param($n) $n -is [System.Management.Automation.Language.CommandAst] -and
-      $n.GetCommandName() -eq 'Import-DscResource'
+      param($n)
+      ($n -is [System.Management.Automation.Language.CommandAst] -and
+        $n.GetCommandName() -eq 'Import-DscResource') -or
+      ($n -is [System.Management.Automation.Language.DynamicKeywordStatementAst] -and
+        $n.CommandElements.Count -gt 0 -and
+        $n.CommandElements[0].Extent.Text -eq 'Import-DscResource')
     }, $true)
 
   $seen = @{}

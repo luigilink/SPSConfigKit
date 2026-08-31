@@ -188,6 +188,48 @@ Node-selector flags:
 > `IsMaster` on non-master nodes &mdash; missing key and explicit `$false`
 > both work.
 
+#### Search topology placement (`SPServerRole` and `Is*` flags)
+
+The Search Service Application topology places its six components (Admin,
+Crawler, ContentProcessing, AnalyticsProcessing, QueryProcessing,
+IndexPartition) on the nodes whose `Is*` flag is set **and** whose
+`SPServerRole` is either `Search` (a dedicated search node) or
+`ApplicationWithSearch` (a combined Application + Search node). Set the
+relevant `Is*` flags to `$true` on whichever node hosts each component.
+
+On a small **2-server farm** you can drop the dedicated `Search` node and
+host every search component on the Application master by giving it the
+`ApplicationWithSearch` MinRole plus the six flags:
+
+```powershell
+@{
+    NodeName     = 'APP1'
+    IsMaster     = $true
+    IsSPSServer  = $True
+    SPVersion    = 'SE'
+    SPServerRole = 'ApplicationWithSearch'
+    IsSrcAdmin   = $True
+    IsSrcCrawl   = $True
+    IsCntProc    = $True
+    IsSrcAnalyt  = $True
+    IsSrcQuery   = $True
+    IsIndexPart  = $True
+    LocalAdmins  = @('CONTOSO\svcspssetup', 'CONTOSO\svcspsfarm', 'CONTOSO\svcspsearch')
+}
+@{
+    NodeName     = 'WFE1'
+    IsAFCache    = $true
+    IsSPSServer  = $True
+    SPVersion    = 'SE'
+    SPServerRole = 'WebFrontEndWithDistributedCache'
+    LocalAdmins  = @('CONTOSO\svcspssetup', 'CONTOSO\svcspsfarm')
+}
+```
+
+> [!NOTE]
+> A commented 2-server example ships alongside the default 3-node search
+> layout in `scripts/sps/CfgAppSps.psd1`.
+
 ### `NonNodeData`
 
 Flat container of farm-wide settings:

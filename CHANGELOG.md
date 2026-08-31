@@ -3,6 +3,26 @@
 The format is based on and uses the types of changes according to [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.2] - 2026-08-31
+
+### Fixed
+
+- Search topology now accepts nodes with the `ApplicationWithSearch` MinRole (#52)
+  - The six `SPSearchTopology` component assignments in `CfgAppSps`
+    (`Admin`, `Crawler`, `ContentProcessing`, `AnalyticsProcessing`, `QueryProcessing`,
+    `IndexPartition`) filtered strictly on `SPServerRole -eq 'Search'`. A node declared with
+    the documented `ApplicationWithSearch` MinRole (a combined Application + Search server)
+    and the six `Is*` component flags matched none of them, so the Search Service Application
+    topology was provisioned empty on a 2-server farm with no dedicated `Search` node — even
+    though MinRole had accepted and deployed the role. The filters now accept both roles
+    (`SPServerRole -in @('Search', 'ApplicationWithSearch')`). The `$SPSSearchMaster` node
+    selector already matched `*Search*`, so only the topology filters needed widening.
+  - `scripts/sps/CfgAppSps.psd1` ships a commented 2-server example (a combined
+    `ApplicationWithSearch` node + a `WebFrontEndWithDistributedCache` node) alongside the
+    default 3-node search layout, and `wiki/Configuration.md` documents the combined-node
+    scenario. A static + behavioural Pester guard (`scripts/test/SearchTopology.Tests.ps1`)
+    prevents the strict filter from being reintroduced.
+
 ## [1.7.1] - 2026-08-31
 
 ### Fixed

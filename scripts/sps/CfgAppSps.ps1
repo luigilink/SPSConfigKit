@@ -1338,16 +1338,19 @@ try {
         }
       }
       # Add SharePoint Search Service Application Topology
+      # The component filters accept both the dedicated 'Search' MinRole and the combined
+      # 'ApplicationWithSearch' MinRole, so a single Application+Search node (2-server farm)
+      # populates the topology just like a dedicated Search node does.
       SPSearchTopology APPLICATION_SpsSvcSearchTopo {
         DependsOn               = '[SPSearchServiceApp]APPLICATION_SpsSvcAppSearchServiceApp'
         PsDscRunAsCredential    = $SETUP
         ServiceAppName          = $ConfigurationData.NonNodeData.SharePoint.Services.SearchService.Name
-        Admin                   = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -eq "Search" -and $_.IsSrcAdmin }.Nodename
-        Crawler                 = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -eq "Search" -and $_.IsSrcCrawl }.Nodename
-        ContentProcessing       = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -eq "Search" -and $_.IsCntProc }.Nodename
-        AnalyticsProcessing     = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -eq "Search" -and $_.IsSrcAnalyt }.Nodename
-        QueryProcessing         = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -eq "Search" -and $_.IsSrcQuery }.Nodename
-        IndexPartition          = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -eq "Search" -and $_.IsIndexPart }.Nodename
+        Admin                   = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') -and $_.IsSrcAdmin }.Nodename
+        Crawler                 = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') -and $_.IsSrcCrawl }.Nodename
+        ContentProcessing       = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') -and $_.IsCntProc }.Nodename
+        AnalyticsProcessing     = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') -and $_.IsSrcAnalyt }.Nodename
+        QueryProcessing         = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') -and $_.IsSrcQuery }.Nodename
+        IndexPartition          = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') -and $_.IsIndexPart }.Nodename
         FirstPartitionDirectory = "$($ConfigurationData.NonNodeData.Drives.Data)\$($ConfigurationData.NonNodeData.SharePoint.Services.SearchService.Topology.FirstPartitionDirectory)"
       }
       # Add SharePoint Search content sources

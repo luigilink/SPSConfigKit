@@ -356,19 +356,43 @@ try {
         IncludeAllSubFeature = $true
         Ensure               = 'Present'
       }
-      #Set the AuthServerAllowlist registry key
-      Registry SYSTEM_SPSAuthServerAllowList {
-        Key       = 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge'
-        ValueName = 'AuthServerAllowlist'
-        ValueType = 'String'
-        ValueData = "*app1*,*$($ConfigurationData.NonNodeData.DomainName)*"
-        Ensure    = 'Present'
+      #Set the Edge AuthServerAllowlist registry key (optional, opt-in).
+      # HKLM\SOFTWARE\Policies\Microsoft\Edge\AuthServerAllowlist is a browser Integrated
+      # Windows Auth policy, normally owned centrally by GPO / Intune. It is only written when
+      # NonNodeData.SharePoint.EdgeAuthAllowlist.Enabled is $true; otherwise the resource is
+      # omitted so your domain policy stays authoritative. Hosts defaults to *<DomainName>*
+      # (every host in the domain) when the block does not list explicit patterns.
+      $edgeAuth = $ConfigurationData.NonNodeData.SharePoint.EdgeAuthAllowlist
+      if ($edgeAuth -and $edgeAuth.Enabled) {
+        $edgeAuthHosts = if ($edgeAuth.Hosts -and @($edgeAuth.Hosts).Count -gt 0) {
+          @($edgeAuth.Hosts)
+        }
+        else {
+          @("*$($ConfigurationData.NonNodeData.DomainName)*")
+        }
+        Registry SYSTEM_SPSAuthServerAllowList {
+          Key       = 'HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge'
+          ValueName = 'AuthServerAllowlist'
+          ValueType = 'String'
+          ValueData = ($edgeAuthHosts -join ',')
+          # Overwrite an existing value (e.g. one already set by GPO) instead of erroring.
+          Force     = $true
+          Ensure    = 'Present'
+        }
       }
-      # Log the progress of the configuration application
+      # Log the progress of the configuration application. The DependsOn points at the Edge
+      # allowlist registry resource only when it is emitted; otherwise it chains off the last
+      # unconditional resource so the MOF still compiles when the allowlist is omitted.
+      $allNodesCompletedDependsOn = if ($edgeAuth -and $edgeAuth.Enabled) {
+        '[Registry]SYSTEM_SPSAuthServerAllowList'
+      }
+      else {
+        '[WindowsFeature]SYSTEM_ADS_Feature_RSAT-AD-Tools'
+      }
       Log SYSTEM_AllNodes_Completed {
         #The message below gets written to the Microsoft-Windows-Desired State Configuration/Analytic log
         Message   = '[SYSTEM]All Nodes Configuration Completed'
-        DependsOn = '[Registry]SYSTEM_SPSAuthServerAllowList'
+        DependsOn = $allNodesCompletedDependsOn
       }
     }
 

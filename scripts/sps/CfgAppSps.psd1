@@ -243,6 +243,17 @@
       # as SPManagedAccount resources, which keeps unrelated entries (PULLSETUP, IISPULLAPP, SQL,
       # OOS, monitoring, ...) out of the SPS MOF.
       ManagedAccounts           = @('FARM', 'IISAPP', 'SEARCH')
+      # Optional: Edge Integrated Windows Auth allowlist
+      # (HKLM\SOFTWARE\Policies\Microsoft\Edge\AuthServerAllowlist). This is a browser policy,
+      # normally owned centrally by GPO / Intune — omit this block to let your domain policy
+      # manage it. Provide it with Enabled = $true only if you want the kit to write the key on
+      # every SharePoint node. Hosts is optional; when omitted it defaults to *<DomainName>*
+      # (every host in the domain). The kit writes the value with Force so it overwrites an
+      # existing (e.g. GPO-set) value.
+      # EdgeAuthAllowlist         = @{
+      #   Enabled = $true
+      #   Hosts   = @('*.contoso.com')
+      # }
       WebApplications           = @(
         @{
           Name            = 'SharePoint'

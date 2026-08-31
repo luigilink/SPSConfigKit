@@ -3,6 +3,24 @@
 The format is based on and uses the types of changes according to [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.3] - 2026-08-31
+
+### Changed
+
+- The Edge `AuthServerAllowlist` registry key is now optional and opt-in (#55)
+  - `CfgAppSps` used to write the Microsoft Edge Integrated Windows Auth policy
+    `HKLM\SOFTWARE\Policies\Microsoft\Edge\AuthServerAllowlist` unconditionally on every
+    SharePoint node, with a hardcoded `*app1*` host pattern (a dev/test leftover that does not
+    generalize). This is a **browser** policy normally owned centrally by GPO / Intune. It is
+    now driven by a new optional `NonNodeData.SharePoint.EdgeAuthAllowlist` block: omitted by
+    default (the resource is not emitted, so GPO/Intune stays authoritative), written only when
+    `Enabled = $true`. The host patterns come from the optional `Hosts` list and default to
+    `*<DomainName>*` (every host in the domain) — the hardcoded `*app1*` is removed. The value
+    is written with `Force` so it overwrites an existing (e.g. GPO-set) value instead of
+    failing. `wiki/Configuration.md` documents the block and a Pester guard
+    (`scripts/test/EdgeAuthAllowlist.Tests.ps1`) prevents the always-on / hardcoded key from
+    being reintroduced.
+
 ## [1.7.2] - 2026-08-31
 
 ### Fixed

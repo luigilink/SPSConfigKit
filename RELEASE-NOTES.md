@@ -1,20 +1,18 @@
 # SPSConfigKit - Release Notes
 
-## [1.7.2] - 2026-08-31
+## [1.7.3] - 2026-08-31
 
-### Fixed
+### Changed
 
-- Search topology now accepts nodes with the `ApplicationWithSearch` MinRole (#52)
-  - The six `SPSearchTopology` component assignments in `CfgAppSps`
-    (`Admin`, `Crawler`, `ContentProcessing`, `AnalyticsProcessing`, `QueryProcessing`,
-    `IndexPartition`) filtered strictly on `SPServerRole -eq 'Search'`. A node declared with
-    the documented `ApplicationWithSearch` MinRole (a combined Application + Search server)
-    and the six `Is*` component flags matched none of them, so the Search Service Application
-    topology was provisioned empty on a 2-server farm with no dedicated `Search` node. The
-    filters now accept both roles (`SPServerRole -in @('Search', 'ApplicationWithSearch')`).
-  - A commented 2-server example (a combined `ApplicationWithSearch` node + a
-    `WebFrontEndWithDistributedCache` node) ships in `scripts/sps/CfgAppSps.psd1`, and
-    `wiki/Configuration.md` documents the combined-node scenario.
+- The Edge `AuthServerAllowlist` registry key is now optional and opt-in (#55)
+  - `CfgAppSps` used to write the Microsoft Edge Integrated Windows Auth policy
+    `HKLM\SOFTWARE\Policies\Microsoft\Edge\AuthServerAllowlist` unconditionally on every
+    SharePoint node, with a hardcoded `*app1*` host pattern. This is a browser policy normally
+    owned centrally by GPO / Intune. It is now driven by an optional
+    `NonNodeData.SharePoint.EdgeAuthAllowlist` block: omitted by default (not emitted, so
+    GPO/Intune stays authoritative), written only when `Enabled = $true`. Host patterns come
+    from the optional `Hosts` list and default to `*<DomainName>*`; the value is written with
+    `Force` so it overwrites an existing (e.g. GPO-set) value.
 
 ## Changelog
 

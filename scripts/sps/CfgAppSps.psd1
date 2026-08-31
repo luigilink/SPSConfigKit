@@ -43,6 +43,30 @@
       IsIndexPart  = $True
       LocalAdmins  = @('CONTOSO\svcspssetup', 'CONTOSO\svcspsfarm', 'CONTOSO\svcspsearch')
     }
+    # --- Alternative: 2-server farm (combined Application + Search node) ------------------
+    # On a small farm without a dedicated Search node, host the search components on the
+    # Application master by giving it the 'ApplicationWithSearch' MinRole and the six Is*
+    # component flags. The Search topology accepts this combined role, so all components are
+    # provisioned on that single node. In that layout you keep only two SharePoint nodes
+    # (this one + a WebFrontEndWithDistributedCache) and drop the dedicated 'SCH1' node above:
+    #
+    # @{
+    #   NodeName     = 'APP1'
+    #   IsMaster     = $true
+    #   CacheSize    = 2048
+    #   IsSPSServer  = $True
+    #   SPVersion    = 'SE'
+    #   IsSPSSingle  = $False
+    #   SPServerRole = 'ApplicationWithSearch'
+    #   IsSrcAdmin   = $True
+    #   IsSrcCrawl   = $True
+    #   IsCntProc    = $True
+    #   IsSrcAnalyt  = $True
+    #   IsSrcQuery   = $True
+    #   IsIndexPart  = $True
+    #   LocalAdmins  = @('CONTOSO\svcspssetup', 'CONTOSO\svcspsfarm', 'CONTOSO\svcspsearch')
+    # }
+    # -------------------------------------------------------------------------------------
     @{
       NodeName    = 'OOS1'
       IsMaster    = $True

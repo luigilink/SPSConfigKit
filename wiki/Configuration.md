@@ -395,6 +395,23 @@ and is the canonical schema &mdash; treat the snippet above as a map.
   the historical set. Anything not in the allowlist (`PULLSETUP`,
   `IISPULLAPP`, SQL / OOS / monitoring accounts &hellip;) is intentionally
   ignored and stays out of the SPS MOF.
+- **`SharePoint.EdgeAuthAllowlist`** (optional, off by default) &mdash; when
+  present with `Enabled = $true`, the kit writes the Microsoft Edge Integrated
+  Windows Auth policy
+  `HKLM\SOFTWARE\Policies\Microsoft\Edge\AuthServerAllowlist` on every
+  SharePoint node. This is a **browser** policy, normally owned centrally by
+  **GPO / Intune** &mdash; omit the block to let your domain policy stay
+  authoritative (the resource is simply not emitted). Optional `Hosts` is a
+  list of allowlist patterns; when omitted it defaults to `*<DomainName>*`
+  (every host in the domain). The value is written with `Force`, so it
+  overwrites an existing (e.g. GPO-set) value rather than failing.
+
+  ```powershell
+  EdgeAuthAllowlist = @{
+      Enabled = $true
+      Hosts   = @('*.contoso.com')   # optional; defaults to *<DomainName>*
+  }
+  ```
 - **SQL Server path overrides (optional)** &mdash; `scripts/sql/CfgAppSql.psd1`
   exposes the same `SourcePath` / `DestinationPath` keys under
   `NonNodeData.SQL`. Defaults are `<NonNodeData.SourcePath>\SQL` and

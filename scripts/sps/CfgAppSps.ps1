@@ -268,8 +268,10 @@ try {
     # SharePoint validates the certificate against the connection name; this kit connects
     # through a SQL alias that does not match the SQL certificate SAN, so a name from the SAN
     # (e.g. the SQL server FQDN) must be supplied. Empty for the default 'Optional' level
-    # (no validation). DatabaseServerCertificateHostName is only honoured at farm creation /
-    # join and is not tested for drift, so an empty value is a safe no-op.
+    # (no validation). SharePointDsc's MSFT_SPFarm decorates DatabaseServerCertificateHostName
+    # with [ValidateNotNullOrEmpty()], so the property must be OMITTED from the SPFarm resource
+    # when unused — passing an empty string fails MOF compilation. The SPFarm blocks below add
+    # it to the property hashtable only when $sqlDbCertHostName is non-empty (see splatting).
     $sqlDbCertHostName = if ($ConfigurationData.NonNodeData.SQL -and $ConfigurationData.NonNodeData.SQL.DatabaseServerCertificateHostName) {
       $ConfigurationData.NonNodeData.SQL.DatabaseServerCertificateHostName
     }
@@ -599,21 +601,45 @@ try {
       #New SPFarm Object
       $sqlAliasADM = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'ADMIN' }
       $sqlAliasSVC = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'SERVICES' }
-      SPFarm APPLICATION_SpsCreateSPFarm {
-        DependsOn                    = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
-        PsDscRunAsCredential         = $SETUP
-        Ensure                       = 'Present'
-        IsSingleInstance             = 'Yes'
-        DatabaseServer               = $sqlAliasADM.ServerAlias
-        FarmConfigDatabaseName       = "$($ConfigurationData.NonNodeData.SharePoint.FarmConfigDatabaseName)"
-        Passphrase                   = $PassPhrase
-        FarmAccount                  = $FARM
-        AdminContentDatabaseName     = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
-        CentralAdministrationPort    = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
-        RunCentralAdmin              = $true
-        ServerRole                   = $Node.SPServerRole
-        DatabaseConnectionEncryption = $sqlDbConnectionEncryption
-        DatabaseServerCertificateHostName = $sqlDbCertHostName
+      # DatabaseServerCertificateHostName is validated by MSFT_SPFarm with
+      # [ValidateNotNullOrEmpty()], so it must be OMITTED entirely when no host name is
+      # configured (the default 'Optional' level) — passing an empty string fails at apply.
+      # DSC resource keywords cannot be splatted, so the SPFarm block is emitted with or
+      # without the property depending on whether a host name was supplied.
+      if ([string]::IsNullOrWhiteSpace($sqlDbCertHostName)) {
+        SPFarm APPLICATION_SpsCreateSPFarm {
+          DependsOn                    = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          PsDscRunAsCredential         = $SETUP
+          Ensure                       = 'Present'
+          IsSingleInstance             = 'Yes'
+          DatabaseServer               = $sqlAliasADM.ServerAlias
+          FarmConfigDatabaseName       = "$($ConfigurationData.NonNodeData.SharePoint.FarmConfigDatabaseName)"
+          Passphrase                   = $PassPhrase
+          FarmAccount                  = $FARM
+          AdminContentDatabaseName     = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
+          CentralAdministrationPort    = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+          RunCentralAdmin              = $true
+          ServerRole                   = $Node.SPServerRole
+          DatabaseConnectionEncryption = $sqlDbConnectionEncryption
+        }
+      }
+      else {
+        SPFarm APPLICATION_SpsCreateSPFarm {
+          DependsOn                         = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          PsDscRunAsCredential              = $SETUP
+          Ensure                            = 'Present'
+          IsSingleInstance                  = 'Yes'
+          DatabaseServer                    = $sqlAliasADM.ServerAlias
+          FarmConfigDatabaseName            = "$($ConfigurationData.NonNodeData.SharePoint.FarmConfigDatabaseName)"
+          Passphrase                        = $PassPhrase
+          FarmAccount                       = $FARM
+          AdminContentDatabaseName          = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
+          CentralAdministrationPort         = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+          RunCentralAdmin                   = $true
+          ServerRole                        = $Node.SPServerRole
+          DatabaseConnectionEncryption      = $sqlDbConnectionEncryption
+          DatabaseServerCertificateHostName = $sqlDbCertHostName
+        }
       }
       # Add SharePoint Managed Account.
       # Allowlist of Secrets.psd1 entries that SharePoint owns as Managed Accounts.
@@ -1171,21 +1197,45 @@ try {
       }
       #New SPFarm Object
       $sqlAliasADM = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'ADMIN' }
-      SPFarm APPLICATION_SpsJoinSPFarm {
-        DependsOn                    = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
-        PsDscRunAsCredential         = $SETUP
-        Ensure                       = 'Present'
-        IsSingleInstance             = 'Yes'
-        DatabaseServer               = $sqlAliasADM.ServerAlias
-        FarmConfigDatabaseName       = "$($ConfigurationData.NonNodeData.SharePoint.FarmConfigDatabaseName)"
-        Passphrase                   = $PassPhrase
-        FarmAccount                  = $FARM
-        AdminContentDatabaseName     = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
-        CentralAdministrationPort    = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
-        RunCentralAdmin              = $false
-        ServerRole                   = $Node.SPServerRole
-        DatabaseConnectionEncryption = $sqlDbConnectionEncryption
-        DatabaseServerCertificateHostName = $sqlDbCertHostName
+      # DatabaseServerCertificateHostName is validated by MSFT_SPFarm with
+      # [ValidateNotNullOrEmpty()], so it must be OMITTED entirely when no host name is
+      # configured (the default 'Optional' level) — passing an empty string fails at apply.
+      # DSC resource keywords cannot be splatted, so the SPFarm block is emitted with or
+      # without the property depending on whether a host name was supplied.
+      if ([string]::IsNullOrWhiteSpace($sqlDbCertHostName)) {
+        SPFarm APPLICATION_SpsJoinSPFarm {
+          DependsOn                    = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          PsDscRunAsCredential         = $SETUP
+          Ensure                       = 'Present'
+          IsSingleInstance             = 'Yes'
+          DatabaseServer               = $sqlAliasADM.ServerAlias
+          FarmConfigDatabaseName       = "$($ConfigurationData.NonNodeData.SharePoint.FarmConfigDatabaseName)"
+          Passphrase                   = $PassPhrase
+          FarmAccount                  = $FARM
+          AdminContentDatabaseName     = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
+          CentralAdministrationPort    = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+          RunCentralAdmin              = $false
+          ServerRole                   = $Node.SPServerRole
+          DatabaseConnectionEncryption = $sqlDbConnectionEncryption
+        }
+      }
+      else {
+        SPFarm APPLICATION_SpsJoinSPFarm {
+          DependsOn                         = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          PsDscRunAsCredential              = $SETUP
+          Ensure                            = 'Present'
+          IsSingleInstance                  = 'Yes'
+          DatabaseServer                    = $sqlAliasADM.ServerAlias
+          FarmConfigDatabaseName            = "$($ConfigurationData.NonNodeData.SharePoint.FarmConfigDatabaseName)"
+          Passphrase                        = $PassPhrase
+          FarmAccount                       = $FARM
+          AdminContentDatabaseName          = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
+          CentralAdministrationPort         = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+          RunCentralAdmin                   = $false
+          ServerRole                        = $Node.SPServerRole
+          DatabaseConnectionEncryption      = $sqlDbConnectionEncryption
+          DatabaseServerCertificateHostName = $sqlDbCertHostName
+        }
       }
       #Distributed Cache Service Configuration
       if ($null -eq $Node.CacheSize) {

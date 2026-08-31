@@ -3,6 +3,25 @@
 The format is based on and uses the types of changes according to [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.1] - 2026-08-31
+
+### Fixed
+
+- `SPFarm` no longer fails MOF compilation with an empty
+  `DatabaseServerCertificateHostName` (#51)
+  - When `NonNodeData.SQL.DatabaseConnectionEncryption` was `Optional` (the default) and no
+    `NonNodeData.SQL.DatabaseServerCertificateHostName` was configured, `CfgAppSps` passed the
+    resolved empty string to the `SPFarm` resource. SharePointDsc's `MSFT_SPFarm` decorates
+    `DatabaseServerCertificateHostName` with `[ValidateNotNullOrEmpty()]`, so compilation
+    failed with *"Cannot validate argument on parameter 'DatabaseServerCertificateHostName'
+    because it is an empty string"* — even though the parameter is not needed at the
+    `Optional` level. Both `SPFarm` blocks (`APPLICATION_SpsCreateSPFarm` and
+    `APPLICATION_SpsJoinSPFarm`) now build their properties via splatting and add
+    `DatabaseServerCertificateHostName` only when a host name is configured. The
+    `Mandatory` / `Strict` fail-fast (which still requires the host name) is unchanged. A
+    static Pester guard (`scripts/test/CfgAppSps.Tests.ps1`) prevents the property from being
+    reintroduced as an unconditional key.
+
 ## [1.7.0] - 2026-07-08
 
 ### Added

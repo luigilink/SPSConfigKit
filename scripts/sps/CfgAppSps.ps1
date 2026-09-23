@@ -238,7 +238,7 @@ try {
     
     #Initialize Master and Search Master variables based on the roles defined in the configuration data
     $SPSMaster = $AllNodes.Where{ $_.IsSPSServer -and $_.IsMaster }.NodeName
-    $SPSSearchMaster = ($AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -like "*Search*" } | Select-Object -First 1).NodeName
+    $SPSSearchMaster = ($AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') } | Select-Object -First 1).NodeName
 
     # Detect whether the farm actually declares an Office Online Server node. When no node
     # carries the IsOOSServer role the OOS install Node block compiles nothing, so the

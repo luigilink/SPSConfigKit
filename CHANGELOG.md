@@ -62,7 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     instance is not online on server &lt;node&gt;"* (a transient Failed state that self-heals on
     the next pull). The search master now emits a `WaitForAll` on the other search nodes'
     farm-join log before the topology runs. Only emitted when a second search node exists, so
-    single-search-node farms (the default sample) are unchanged.
+    single-search-node farms (the default sample) are unchanged. The search-master role filter
+    was also aligned to the explicit `Search` / `ApplicationWithSearch` set used elsewhere
+    (previously a `-like "*Search*"` match).
 - `CfgAppSql` now adds the setup account to the local Administrators group (#70)
   - The `SqlProtocol`, `SqlProtocolTcpIP` and `SqlSecureConnection` resources run under `$SETUP`
     and perform Windows-level operations (service control, `HKLM` registry, certificate

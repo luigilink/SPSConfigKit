@@ -238,7 +238,7 @@ try {
     
     #Initialize Master and Search Master variables based on the roles defined in the configuration data
     $SPSMaster = $AllNodes.Where{ $_.IsSPSServer -and $_.IsMaster }.NodeName
-    $SPSSearchMaster = ($AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -like "*Search*" } | Select-Object -First 1).NodeName
+    $SPSSearchMaster = ($AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') } | Select-Object -First 1).NodeName
 
     # Detect whether the farm actually declares an Office Online Server node. When no node
     # carries the IsOOSServer role the OOS install Node block compiles nothing, so the
@@ -1302,6 +1302,10 @@ try {
       # Initialize the SQL Server Alias variable for the Search Service
       $searchCenterUrl = $ConfigurationData.NonNodeData.SharePoint.Services.SearchService.SearchCenterUrl
       $sqlAliasSCH = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'SEARCH' }
+      # Secondary search nodes must have joined the farm before the topology assigns
+      # search components to them, otherwise "the search service instance is not online
+      # on server <node>". They join as non-master, raising SPSNoMaster_Completed.
+      $otherSearchNodes = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') -and (-not $_.IsMaster) -and $_.NodeName -ne $SPSSearchMaster }.NodeName
       if ($Node.IsMaster) {
         $dependsOnForSearchApp = '[Log]APPLICATION_SPSMaster_Completed'
       }
@@ -1365,8 +1369,20 @@ try {
       # The component filters accept both the dedicated 'Search' MinRole and the combined
       # 'ApplicationWithSearch' MinRole, so a single Application+Search node (2-server farm)
       # populates the topology just like a dedicated Search node does.
+      $searchTopoDependsOn = @('[SPSearchServiceApp]APPLICATION_SpsSvcAppSearchServiceApp')
+      if ($otherSearchNodes) {
+        # Gate the topology on the secondary search nodes' farm join to avoid the race.
+        WaitForAll PROCESS_SpsWaitForSearchNodesJoin {
+          PsDscRunAsCredential = $SETUP
+          ResourceName         = '[Log]APPLICATION_SPSNoMaster_Completed'
+          NodeName             = $otherSearchNodes
+          RetryIntervalSec     = 60
+          RetryCount           = 180
+        }
+        $searchTopoDependsOn += '[WaitForAll]PROCESS_SpsWaitForSearchNodesJoin'
+      }
       SPSearchTopology APPLICATION_SpsSvcSearchTopo {
-        DependsOn               = '[SPSearchServiceApp]APPLICATION_SpsSvcAppSearchServiceApp'
+        DependsOn               = $searchTopoDependsOn
         PsDscRunAsCredential    = $SETUP
         ServiceAppName          = $ConfigurationData.NonNodeData.SharePoint.Services.SearchService.Name
         Admin                   = $AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') -and $_.IsSrcAdmin }.Nodename

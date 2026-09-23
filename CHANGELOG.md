@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bumped `SharePointDsc` from 5.7.0 to 5.7.1 (#67)
+  - Patch release (no breaking changes): `SPInstallPrereqs` now reboots and retries when a
+    prerequisite installer fails to download, and a random `MSFT_SPFarm` event-log error on
+    Windows Server 2025 is fixed. Updated the pinned version in `Initialize-DscNode.psd1`, the
+    `Import-DscResource` in `CfgAppSps.ps1`, and the dashboard sample mock data.
 - `Secrets.psd1` now ships as a tracked `.sample` template with the real file git-ignored (#59)
   - The service-account credentials file used to be tracked directly, which risked committing
     real farm passwords (and a `git checkout` could revert a locally-filled copy back to

@@ -48,7 +48,7 @@
         @{ Name = 'NetworkingDsc';                Version = '9.1.0'    }
         @{ Name = 'OfficeOnlineServerDsc';        Version = '1.5.0'    }
         @{ Name = 'PSDscResources';               Version = '2.12.0.0' }
-        @{ Name = 'SharePointDsc';                Version = '5.7.0'    }
+        @{ Name = 'SharePointDsc';                Version = '5.7.1'    }
         @{ Name = 'SqlServerDsc';                 Version = '17.5.1'   }
         @{ Name = 'WebAdministrationDsc';         Version = '4.2.1'    }
         @{ Name = 'xCredSSP';                     Version = '1.4.0'    }

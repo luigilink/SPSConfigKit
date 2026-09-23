@@ -231,7 +231,7 @@ try {
     Import-DscResource -ModuleName NetworkingDsc -ModuleVersion 9.1.0
     Import-DscResource -ModuleName OfficeOnlineServerDsc -ModuleVersion 1.5.0
     Import-DscResource -ModuleName PSDscResources -ModuleVersion 2.12.0.0
-    Import-DscResource -ModuleName SharePointDsc -ModuleVersion 5.7.0
+    Import-DscResource -ModuleName SharePointDsc -ModuleVersion 5.7.1
     Import-DscResource -ModuleName SqlServerDsc -ModuleVersion 17.5.1
     Import-DscResource -ModuleName WebAdministrationDsc -ModuleVersion 4.2.1
     Import-DscResource -ModuleName xCredSSP -ModuleVersion 1.4.0

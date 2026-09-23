@@ -298,6 +298,20 @@ try {
       # it is not a SQL sysadmin, so it connects with no rights and every SqlXXX
       # resource fails with 'Failed to connect to SQL instance'.
       $sqlAdminCredential = $SETUP
+      # Ensure the Windows-level SQL resources' RunAs account ($SETUP) is a local
+      # admin so it can control the service, write HKLM and grant the cert private
+      # key. RunAs $ADSETUP (already a local admin). Mirrors CfgAppSps.
+      $dependsOnLocalAdmin = @()
+      if ($Node.LocalAdmins) {
+        Group MIDDLEWARE_AddSetupAccountToAdminGroup {
+          GroupName            = 'Administrators'
+          Ensure               = 'Present'
+          MembersToInclude     = $Node.LocalAdmins
+          Credential           = $ADSETUP
+          PsDscRunAsCredential = $ADSETUP
+        }
+        $dependsOnLocalAdmin = @('[Group]MIDDLEWARE_AddSetupAccountToAdminGroup')
+      }
       if ($Node.IsSQLSetup) {
         $dependsOnSQLSetup = '[SqlSetup]MIDDLEWARE_SqlMSSQLSERVER'
         SqlSetup MIDDLEWARE_SqlMSSQLSERVER {
@@ -339,7 +353,7 @@ try {
         # resource restarts the service by default (SuppressRestart defaults to $false)
         # so the change takes effect.
         SqlProtocol MIDDLEWARE_SqlProtocolTcpEnabled {
-          DependsOn              = $dependsOnSQLSetup
+          DependsOn              = @($dependsOnSQLSetup) + $dependsOnLocalAdmin
           PsDscRunAsCredential   = $sqlAdminCredential
           InstanceName           = $sqlSPInstance
           ProtocolName           = 'TcpIp'
@@ -501,7 +515,7 @@ try {
         #Bind the certificate to the SQL instance and force encryption. SqlSecureConnection grants
         # the ServiceAccount read access to the private key and restarts the engine to apply.
         SqlSecureConnection MIDDLEWARE_SqlForceEncryption {
-          DependsOn            = '[PfxImport]MIDDLEWARE_SqlCertificateImport'
+          DependsOn            = @('[PfxImport]MIDDLEWARE_SqlCertificateImport') + $dependsOnLocalAdmin
           PsDscRunAsCredential = $sqlAdminCredential
           InstanceName         = $sqlSPInstance
           Thumbprint           = $sqlCertThumbprint.Thumbprint

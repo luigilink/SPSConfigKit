@@ -14,6 +14,10 @@
       SQLTcpPort           = 1433
       SQLCollation         = 'Latin1_General_CI_AS_KS_WS'
       SQLSysAdministrators = @('CONTOSO\svcspssetup', 'CONTOSO\svcspsfarm')
+      # Domain accounts added to the local Administrators group so the RunAs
+      # account of the Windows-level SQL resources (SqlProtocol / SqlSecureConnection)
+      # can control the service, write the registry and grant the cert private key.
+      LocalAdmins          = @('CONTOSO\svcspssetup', 'CONTOSO\svcspsfarm')
     }
   )
   NonNodeData = @{

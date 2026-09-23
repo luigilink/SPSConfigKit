@@ -53,6 +53,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     The comment-based help and the outbound-internet check messaging were updated to drop the
     Chocolatey wording (the internet check itself stays — it still gates the downloads).
 
+### Fixed
+
+- `CfgAppSql` now adds the setup account to the local Administrators group (#70)
+  - The `SqlProtocol`, `SqlProtocolTcpIP` and `SqlSecureConnection` resources run under `$SETUP`
+    and perform Windows-level operations (service control, `HKLM` registry, certificate
+    private-key ACL) that require local administrator rights. `$SETUP` is a SQL sysadmin but was
+    not a local admin, so they failed with *Access is denied* / *Requested registry access is
+    not allowed* / missing `SeSecurityPrivilege`. A `Group` resource (RunAs `$ADSETUP`) now adds
+    the new `NonNodeData` node `LocalAdmins` accounts to the local `Administrators` group before
+    those resources run, mirroring `CfgAppSps`.
+
 ## [1.7.3] - 2026-08-31
 
 ### Changed

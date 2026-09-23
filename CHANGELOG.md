@@ -36,6 +36,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and a `Release-Process.md` page (tag-based release model), and refreshed the `Home` page
     list. Documentation only.
 
+### Removed
+
+- Removed the redundant Chocolatey install logic from `Initialize-SoftwarePackages.ps1` (#65)
+  - `Initialize-SoftwarePackages.ps1` (run once on the file-share host to stage/download the
+    SharePoint/SQL/OOS binaries) carried a Chocolatey bootstrap + `choco install` block that
+    duplicated the logic already owned by `Initialize-DscNode.ps1` (the node-bootstrap script).
+    The block was in fact dead code: `Initialize-SoftwarePackages.psd1` never defined a
+    `Chocolatey` section, so `$configurationData.Chocolatey.Ensure` was always `$null` and the
+    step never ran. Chocolatey is now solely the responsibility of `Initialize-DscNode.ps1`.
+    The comment-based help and the outbound-internet check messaging were updated to drop the
+    Chocolatey wording (the internet check itself stays — it still gates the downloads).
+
 ## [1.7.3] - 2026-08-31
 
 ### Changed

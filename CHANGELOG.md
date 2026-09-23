@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     (`Copy-Item scripts/Secrets.sample.psd1 scripts/Secrets.psd1`) and fill in your passwords —
     the `Cfg*.ps1`, init, pull and test scripts still default to `scripts/Secrets.psd1` and
     already error clearly when it is missing. Documented in the README and wiki.
+- Polished the README and wiki documentation (#61)
+  - Enriched the README badge row (latest release/version, license, last commit) and lightened
+    the README by moving already-duplicated content to the wiki: the verbose Requirements/WMF
+    block and the full DSC-modules list (the Getting-Started page has a pinned-version table),
+    and condensed the credential-encryption section to the key statement plus a link (the
+    Securing-Credentials page has the full walkthrough). Added a `_Sidebar.md` wiki navigation
+    and a `Release-Process.md` page (tag-based release model), and refreshed the `Home` page
+    list. Documentation only.
 
 ## [1.7.3] - 2026-08-31
 

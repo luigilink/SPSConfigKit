@@ -51,14 +51,18 @@ the farm to bring it to a known, reproducible state.
 
 ## Documentation
 
-- [Getting Started](./Getting-Started) &mdash; prerequisites, dependencies,
+- [🚀 Getting Started](./Getting-Started) &mdash; prerequisites, dependencies,
   node bootstrap workflow.
-- [Configuration](./Configuration) &mdash; the `.psd1` schema, the
+- [⚙️ Configuration](./Configuration) &mdash; the `.psd1` schema, the
   `Secrets.psd1` schema, and how the two are stitched together at compile
   time.
-- [Usage](./Usage) &mdash; compiling the MOFs, applying them with
+- [🔐 Securing Credentials](./Securing-Credentials) &mdash; DSC document
+  encryption, certificate generation and rotation.
+- [📖 Usage](./Usage) &mdash; compiling the MOFs, applying them with
   `Start-DscConfiguration` (push) or registering an LCM (pull), and
   day-to-day operations.
+- [📦 Release Process](./Release-Process) &mdash; how to version, tag and
+  ship a release.
 
 ## Change log
 

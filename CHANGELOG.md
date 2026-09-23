@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     farms leave that key disabled and let the domain policy own it. Sample value `*.contoso.com`
     (adjust to your domain); sample `.psd1` only — the GPO mechanism already existed.
 
+### Changed
+
+- `Secrets.psd1` now ships as a tracked `.sample` template with the real file git-ignored (#59)
+  - The service-account credentials file used to be tracked directly, which risked committing
+    real farm passwords (and a `git checkout` could revert a locally-filled copy back to
+    placeholders). Following the repo's existing `.sample.psd1` convention
+    (`CfgLcmPull.DomainDefaults`), only `scripts/Secrets.sample.psd1` (placeholder passwords) is
+    now tracked; the real `scripts/Secrets.psd1` is git-ignored. Copy the sample once
+    (`Copy-Item scripts/Secrets.sample.psd1 scripts/Secrets.psd1`) and fill in your passwords —
+    the `Cfg*.ps1`, init, pull and test scripts still default to `scripts/Secrets.psd1` and
+    already error clearly when it is missing. Documented in the README and wiki.
+
 ## [1.7.3] - 2026-08-31
 
 ### Changed

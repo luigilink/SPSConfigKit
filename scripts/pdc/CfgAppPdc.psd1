@@ -89,6 +89,11 @@
     # Microsoft Edge browser policies pushed via GPO on the AD domain.
     # Reference: https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies
     EdgePolicies = @(
+      # Integrated Windows Auth allowlist: enables seamless Kerberos/NTLM SSO from Edge to the
+      # intranet hosts (SharePoint web apps, Central Administration, ...). Pushed by this domain
+      # GPO to every domain-joined server, so farms leave SharePoint.EdgeAuthAllowlist disabled
+      # (see CfgAppSps) and let this policy own it. Adjust the pattern to your domain.
+      @{ policyValueName = 'AuthServerAllowlist';              policyCanBeRecommended = $false; policyValueValue = '*.contoso.com' }
       @{ policyValueName = 'HideFirstRunExperience';           policyCanBeRecommended = $false; policyValueValue = 1 }
       @{ policyValueName = 'TrackingPrevention';               policyCanBeRecommended = $false; policyValueValue = 3 }
       @{ policyValueName = 'AdsTransparencyEnabled';           policyCanBeRecommended = $false; policyValueValue = 0 }

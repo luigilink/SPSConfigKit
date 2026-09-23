@@ -3,6 +3,19 @@
 The format is based on and uses the types of changes according to [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The domain GPO now pushes the Edge `AuthServerAllowlist` policy (#57)
+  - `CfgAppPdc` already provisions an `Edge_browser` GPO (linked to the domain) from
+    `NonNodeData.EdgePolicies`. An `AuthServerAllowlist` entry is added to that list so the GPO
+    enables seamless Integrated Windows Auth (Kerberos/NTLM SSO) from Edge to the intranet on
+    **every** domain-joined server, including the SharePoint nodes. This is the GPO-managed
+    counterpart to the opt-in `SharePoint.EdgeAuthAllowlist` from #55: with the GPO in place,
+    farms leave that key disabled and let the domain policy own it. Sample value `*.contoso.com`
+    (adjust to your domain); sample `.psd1` only — the GPO mechanism already existed.
+
 ## [1.7.3] - 2026-08-31
 
 ### Changed

@@ -52,7 +52,7 @@ versions below are the ones currently pinned:
 | NetworkingDsc                   | 9.1.0      |
 | OfficeOnlineServerDsc           | 1.5.0      |
 | PSDscResources                  | 2.12.0.0   |
-| SharePointDsc                   | 5.7.0      |
+| SharePointDsc                   | 5.7.1      |
 | SqlServerDsc                    | 17.5.1     |
 | WebAdministrationDsc            | 4.2.1      |
 | xCredSSP                        | 1.4.0      |

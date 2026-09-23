@@ -625,6 +625,41 @@ try {
       #New SPFarm Object
       $sqlAliasADM = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'ADMIN' }
       $sqlAliasSVC = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'SERVICES' }
+      # Central Administration over HTTPS: when NonNodeData.SharePoint.CentralAdministrationUrl
+      # is an https URL, SharePoint provisions Central Admin on that vanity URL and binds the
+      # certificate whose SAN matches the host. Import SharePointAdminCert into LocalMachine\My
+      # *before* the farm is created (the SPCertificate loop that imports into the SharePoint
+      # store only runs after SPFarm), so the binding is available when Central Admin is
+      # provisioned. Leave the URL empty/absent to keep Central Admin on plain HTTP at the port.
+      $spCentralAdminUrl = $ConfigurationData.NonNodeData.SharePoint.CentralAdministrationUrl
+      $useHttpsCentralAdmin = (-not [string]::IsNullOrWhiteSpace($spCentralAdminUrl)) -and ($spCentralAdminUrl -like 'https://*')
+      $spFarmDependsOn = @('[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation')
+      if ($useHttpsCentralAdmin) {
+        $spAdminCert = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'SharePointAdminCert' }
+        if ($null -eq $spAdminCert) {
+          throw "NonNodeData.SharePoint.CentralAdministrationUrl is set to an HTTPS URL but no ADC certificate named 'SharePointAdminCert' was found in NonNodeData.ADC.certificates (needed to bind the Central Administration SSL certificate)."
+        }
+        try {
+          $getSPAdminCertificate = Get-CertThumbprint -CertPath "$($spAdminCert.CertPath)"
+        }
+        catch {
+          Write-Error "Failed to retrieve the Central Administration certificate: $_"
+          throw
+        }
+        PfxImport APPLICATION_SpsAdminCertificateImport {
+          DependsOn  = '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          Thumbprint = $getSPAdminCertificate.Thumbprint
+          Path       = "$($spAdminCert.PfxPath)"
+          Store      = 'My'
+          Location   = 'LocalMachine'
+          # Per-cert PFX password: resolves the PSCredential auto-materialised by the secrets
+          # loader in Secrets.psd1 (Name = 'SharePointAdminCert').
+          Credential = (Get-Variable -Name $spAdminCert.Name -ValueOnly)
+          Exportable = $true
+          Ensure     = 'Present'
+        }
+        $spFarmDependsOn += '[PfxImport]APPLICATION_SpsAdminCertificateImport'
+      }
       # DatabaseServerCertificateHostName is validated by MSFT_SPFarm with
       # [ValidateNotNullOrEmpty()], so it must be OMITTED entirely when no host name is
       # configured (the default 'Optional' level) — passing an empty string fails at apply.
@@ -632,7 +667,7 @@ try {
       # without the property depending on whether a host name was supplied.
       if ([string]::IsNullOrWhiteSpace($sqlDbCertHostName)) {
         SPFarm APPLICATION_SpsCreateSPFarm {
-          DependsOn                    = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          DependsOn                    = $spFarmDependsOn
           PsDscRunAsCredential         = $SETUP
           Ensure                       = 'Present'
           IsSingleInstance             = 'Yes'
@@ -642,6 +677,7 @@ try {
           FarmAccount                  = $FARM
           AdminContentDatabaseName     = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
           CentralAdministrationPort    = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+          CentralAdministrationUrl     = "$spCentralAdminUrl"
           RunCentralAdmin              = $true
           ServerRole                   = $Node.SPServerRole
           DatabaseConnectionEncryption = $sqlDbConnectionEncryption
@@ -649,7 +685,7 @@ try {
       }
       else {
         SPFarm APPLICATION_SpsCreateSPFarm {
-          DependsOn                         = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          DependsOn                         = $spFarmDependsOn
           PsDscRunAsCredential              = $SETUP
           Ensure                            = 'Present'
           IsSingleInstance                  = 'Yes'
@@ -659,6 +695,7 @@ try {
           FarmAccount                       = $FARM
           AdminContentDatabaseName          = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
           CentralAdministrationPort         = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+          CentralAdministrationUrl          = "$spCentralAdminUrl"
           RunCentralAdmin                   = $true
           ServerRole                        = $Node.SPServerRole
           DatabaseConnectionEncryption      = $sqlDbConnectionEncryption
@@ -804,10 +841,18 @@ try {
         }
       }
       #Outgoing Email Settings for Central Administration Web Application
+      # Target the HTTPS Central Admin vanity URL when configured, otherwise the default
+      # http://<node>:<port> address.
+      $spCentralAdminWebAppUrl = if ($useHttpsCentralAdmin) {
+        $spCentralAdminUrl
+      }
+      else {
+        "http://$($Node.NodeName):$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+      }
       SPOutgoingEmailSettings APPLICATION_OutgoingEmailCA {
         DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
         PsDscRunAsCredential = $SETUP
-        WebAppUrl            = "http://$($Node.NodeName):$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+        WebAppUrl            = $spCentralAdminWebAppUrl
         CharacterSet         = $ConfigurationData.NonNodeData.SharePoint.MailSettings.CharacterSet
         SMTPServer           = $ConfigurationData.NonNodeData.SharePoint.MailSettings.SMTPServer
         ReplyToAddress       = $ConfigurationData.NonNodeData.SharePoint.MailSettings.ReplyToAddress

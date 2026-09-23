@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Central Administration can be served over HTTPS on a vanity URL (#63)
+  - New `NonNodeData.SharePoint.CentralAdministrationUrl`: when set to an HTTPS URL (e.g.
+    `https://sharepoint-admin.contoso.com`), `CfgAppSps` provisions Central Administration over
+    SSL on that host instead of `http://<node>:<port>`. `CfgAppPdc` issues a new
+    `SharePointAdminCert` certificate (SAN `sharepoint-admin.contoso.com`) and publishes a
+    matching DNS record; `CfgAppSps` imports the certificate into `LocalMachine\My` before the
+    farm is created (so the binding is available when Central Admin is provisioned), sets the
+    `SPFarm` `CentralAdministrationUrl`, and points the Central Admin outgoing-email settings at
+    the HTTPS URL. The sample now defaults Central Admin to
+    `https://sharepoint-admin.contoso.com` on port 443. A `SharePointAdminCert` entry is added
+    to `Secrets.sample.psd1`. Leave `CentralAdministrationUrl` empty to keep Central Admin on
+    plain HTTP.
 - The domain GPO now pushes the Edge `AuthServerAllowlist` policy (#57)
   - `CfgAppPdc` already provisions an `Edge_browser` GPO (linked to the domain) from
     `NonNodeData.EdgePolicies`. An `AuthServerAllowlist` entry is added to that list so the GPO

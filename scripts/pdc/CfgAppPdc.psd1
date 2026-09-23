@@ -47,8 +47,9 @@
     # (WFE/VIP for the web app, the OOS server for Office Online). Omit or leave
     # empty to publish no records.
     DnsRecords = @(
-      @{ Name = 'sharepoint'; IPAddress = '10.1.1.27' }
-      @{ Name = 'oosweb'     ; IPAddress = '10.1.1.31' }
+      @{ Name = 'sharepoint'      ; IPAddress = '10.1.1.27' }
+      @{ Name = 'sharepoint-admin'; IPAddress = '10.1.1.21' }
+      @{ Name = 'oosweb'          ; IPAddress = '10.1.1.31' }
     )
     ADC        = @{
       certificates = @(
@@ -67,6 +68,14 @@
           SubjectAlt   = 'dns=sharepoint.contoso.com'
           CerFileName  = 'SharePoint.cer'
           PfxFileName  = 'SharePoint.pfx'
+        }
+        @{
+          Name         = 'SharePointAdminCert'
+          FriendlyName = 'SharePointAdmin'
+          Subject      = 'sharepoint-admin.contoso.com'
+          SubjectAlt   = 'dns=sharepoint-admin.contoso.com'
+          CerFileName  = 'SharePointAdmin.cer'
+          PfxFileName  = 'SharePointAdmin.pfx'
         }
         @{
           Name         = 'OfficeOnlineCert'

@@ -284,7 +284,8 @@ NonNodeData = @{
     SharePoint = @{
         ProductKey                = '…'
         FarmConfigDatabaseName    = 'DSPS_Admin_Config'
-        CentralAdministrationPort = '5555'
+        CentralAdministrationPort = '443'
+        CentralAdministrationUrl  = 'https://sharepoint-admin.contoso.com'
         ServiceAppPoolName        = 'SharePointServiceApplications'
         WebApplications           = @(
             @{
@@ -390,6 +391,21 @@ and is the canonical schema &mdash; treat the snippet above as a map.
   sub-folder under `<DestinationPath>\<Subfolders.LanguagePack>\` that
   contains the corresponding `setup.exe`. Omit or leave as `@()` to skip
   Language Pack installation entirely.
+- **`SharePoint.CentralAdministrationUrl`** (optional) &mdash; a vanity URL for
+  Central Administration. When set to an **HTTPS** URL (e.g.
+  `https://sharepoint-admin.contoso.com`), Central Admin is served over SSL on
+  that host instead of `http://<node>:<port>`. This requires: a certificate
+  named **`SharePointAdminCert`** in `ADC.certificates` whose SAN covers the host
+  (issued by `CfgAppPdc`, imported into `LocalMachine\My` before the farm is
+  created), a matching `Secrets.psd1` entry (PFX password), and a DNS record for
+  the host pointing at the Central Admin node (published by `CfgAppPdc`). Set
+  `CentralAdministrationPort` to match the scheme (`443` for HTTPS). Leave the URL
+  empty/absent to keep Central Admin on plain HTTP at the port.
+  > [!NOTE]
+  > The SharePoint SE certificate binding for the Central Administration vanity
+  > URL should be validated on a real farm. If SharePoint does not bind the
+  > certificate at farm creation, import `SharePointAdminCert` with `SPCertificate`
+  > and set the URL with `Set-SPCentralAdministration` after the farm exists.
 - **`SharePoint.ManagedAccounts`** (optional) &mdash; allowlist of
   `Secrets.psd1` account names that SharePoint should register as
   `SPManagedAccount` resources on the farm master. Defaults to

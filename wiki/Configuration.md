@@ -21,7 +21,8 @@ scripts) import both files and compile one MOF per node defined in
 
 ```text
 scripts/
-├── Secrets.psd1                ← credentials, shared by every config script
+├── Secrets.sample.psd1         ← tracked credentials template (placeholders)
+├── Secrets.psd1                ← your real credentials (git-ignored; copy of the sample)
 ├── init/
 │   ├── Initialize-DscNode.psd1            ← prerequisite manifest (modules, certs)
 │   ├── Initialize-DscNode.ps1
@@ -76,10 +77,12 @@ Example:
 ```
 
 > [!CAUTION]
-> Never commit real passwords to source control. The bundled `Secrets.psd1`
-> uses `'******************'` placeholders. Replace it with a wrapper that
-> pulls from your secret store (Azure Key Vault, CyberArk, etc.) before the
-> file is read in any environment.
+> Never commit real passwords to source control. Only the tracked
+> `Secrets.sample.psd1` template ships (with `'******************'`
+> placeholders); the real `Secrets.psd1` you fill in is **git-ignored**, so your
+> credentials never reach the repository. Copy the sample to `Secrets.psd1` and
+> replace the placeholders with a wrapper that pulls from your secret store
+> (Azure Key Vault, CyberArk, etc.) before the file is read in any environment.
 
 ### Which brick each account belongs to
 

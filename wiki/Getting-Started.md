@@ -189,9 +189,17 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    > DNS already resolves the domain don't need it (leave `DnsServers = @()` to
    > join without changing DNS, or skip the script entirely).
 
-5. **Fill in `scripts/Secrets.psd1`** with the AD service accounts, the
-   farm passphrase, the DSRM password, and the PFX passwords for every
-   certificate referenced by your configuration. See the
+5. **Copy the secrets template and fill it in.** The real `scripts/Secrets.psd1`
+   is git-ignored — only the `scripts/Secrets.sample.psd1` template is tracked.
+   Copy it once, then edit your local copy:
+
+   ```powershell
+   Copy-Item scripts/Secrets.sample.psd1 scripts/Secrets.psd1
+   ```
+
+   Fill in `scripts/Secrets.psd1` with the AD service accounts, the farm
+   passphrase, the DSRM password, and the PFX passwords for every certificate
+   referenced by your configuration. See the
    [Configuration](./Configuration) page for the schema.
 
 6. **Customise `scripts/sps/CfgAppSps.psd1`** to describe your nodes, your

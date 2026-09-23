@@ -7,3 +7,7 @@
 # Ignore the real per-domain pull-server defaults (holds registration keys).
 # Only the .sample template is tracked.
 scripts/pull/CfgLcmPull.DomainDefaults.psd1
+
+# Ignore the real service-account secrets (holds farm passwords).
+# Only the .sample template is tracked.
+scripts/Secrets.psd1

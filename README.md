@@ -69,6 +69,12 @@ The kit ships everything needed and the workflow makes it mandatory:
 See the [Securing Credentials](https://github.com/luigilink/SPSConfigKit/wiki/Securing-Credentials)
 wiki page for the full walkthrough, certificate rotation, and troubleshooting.
 
+> [!NOTE]
+> Only the `scripts/Secrets.sample.psd1` template (placeholder passwords) is
+> tracked in git; the real `scripts/Secrets.psd1` you fill in is git-ignored.
+> Copy it once with `Copy-Item scripts/Secrets.sample.psd1 scripts/Secrets.psd1`
+> before compiling, so your credentials never reach the repository.
+
 ## Documentation
 
 For detailed usage, configuration, and getting started information, visit the [SPSConfigKit Wiki](https://github.com/luigilink/SPSConfigKit/wiki)

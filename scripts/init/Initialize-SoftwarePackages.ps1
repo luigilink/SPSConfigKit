@@ -29,9 +29,6 @@
 
   Reads a manifest (Initialize-SoftwarePackages.psd1 by default, located next
   to this script) and:
-    * optionally installs Chocolatey + the packages listed under
-      Chocolatey.Packages (left empty by default; the file-share host has
-      no hard external dependency)
     * for each entry in SoftwarePackages:
         - downloads the file to %TEMP% (or directly to the target folder
           when Extract = $false)
@@ -42,7 +39,7 @@
           (mounting a downloaded ISO propagates the Mark-of-the-Web to the
           copied files, so the setup binaries must be unblocked too)
 
-  The Chocolatey and download phases are skipped automatically when the host
+  The download phase is skipped automatically when the host
   has no outbound internet access. Per-package failures are caught and
   logged so that one bad URL does not abort the whole run.
 
@@ -141,7 +138,7 @@ else {
 }
 
 # Detect outbound internet access once. Steps that require the public
-# internet (Chocolatey bootstrap, file downloads) honour this flag.
+# internet (file downloads) honour this flag.
 Write-Host 'Checking outbound internet access...'
 $hasInternet = $false
 try {
@@ -155,37 +152,7 @@ if ($hasInternet) {
     Write-Host 'Internet access detected.'
 }
 else {
-    Write-Warning 'No outbound internet access detected. Chocolatey and download steps will be skipped.'
-}
-
-# Install Chocolatey and the requested packages.
-if ($configurationData.Chocolatey.Ensure -eq 'Present') {
-    if (-not $hasInternet) {
-        Write-Warning 'Skipping Chocolatey step: no internet access.'
-    }
-    else {
-        Write-Host 'Ensuring Chocolatey is installed...'
-        $chocoInstalled = Get-Command -Name choco -ErrorAction SilentlyContinue
-        if ($chocoInstalled) {
-            Write-Host 'Chocolatey is already installed.'
-        }
-        else {
-            Write-Host 'Chocolatey is not installed. Installing...'
-            Invoke-WebRequest -Uri 'https://community.chocolatey.org/install.ps1' -UseBasicParsing |
-                Invoke-Expression
-        }
-
-        # Enable global confirmation to avoid prompts during installation
-        choco feature enable -n allowGlobalConfirmation
-
-        foreach ($package in $configurationData.Chocolatey.Packages) {
-            Write-Host "Installing Chocolatey package: $package"
-            choco install $package
-        }
-    }
-}
-else {
-    Write-Host 'Chocolatey installation is not required as per configuration.'
+    Write-Warning 'No outbound internet access detected. Download steps will be skipped.'
 }
 
 # Download and extract required software packages.

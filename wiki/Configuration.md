@@ -412,6 +412,13 @@ and is the canonical schema &mdash; treat the snippet above as a map.
       Hosts   = @('*.contoso.com')   # optional; defaults to *<DomainName>*
   }
   ```
+
+  > [!TIP]
+  > The recommended path is to let the domain manage this policy centrally.
+  > `CfgAppPdc` ships an `AuthServerAllowlist` entry in `NonNodeData.EdgePolicies`
+  > that the `Edge_browser` GPO pushes to **every** domain-joined server
+  > (including the SharePoint nodes). When that GPO is in place, leave
+  > `SharePoint.EdgeAuthAllowlist` disabled and let the GPO own the policy.
 - **SQL Server path overrides (optional)** &mdash; `scripts/sql/CfgAppSql.psd1`
   exposes the same `SourcePath` / `DestinationPath` keys under
   `NonNodeData.SQL`. Defaults are `<NonNodeData.SourcePath>\SQL` and

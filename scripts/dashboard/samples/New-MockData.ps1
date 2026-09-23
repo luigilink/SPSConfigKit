@@ -53,8 +53,8 @@ $reports = [ordered]@{}
 
 # APP1 — Compliant
 $app1In = @(
-  (New-Resource '[SPFarm]APPLICATION_SpsCreateSPFarm' 'SharePointDsc' '5.7.0' $true '42.1' '')
-  (New-Resource '[SPInstall]APPLICATION_SpsInstallSharePoint' 'SharePointDsc' '5.7.0' $true '310.8' '')
+  (New-Resource '[SPFarm]APPLICATION_SpsCreateSPFarm' 'SharePointDsc' '5.7.1' $true '42.1' '')
+  (New-Resource '[SPInstall]APPLICATION_SpsInstallSharePoint' 'SharePointDsc' '5.7.1' $true '310.8' '')
   (New-Resource '[xCredSSP]SECURITY_CredSSPServer' 'xCredSSP' '1.4.0' $true '0.9' '')
 )
 $reports['52DA826D-00DE-4166-8ACB-73F2B46A7E00'] = @(
@@ -62,15 +62,15 @@ $reports['52DA826D-00DE-4166-8ACB-73F2B46A7E00'] = @(
 )
 
 # WFE1 — Non-compliant (1 drift)
-$wfe1In = @( (New-Resource '[SPFarm]APPLICATION_SpsJoinSPFarm' 'SharePointDsc' '5.7.0' $true '38.4' '') )
-$wfe1Not = @( (New-Resource '[SPDistributedCacheService]APPLICATION_SpsEnableDistributedCache' 'SharePointDsc' '5.7.0' $false '5.2' '') )
+$wfe1In = @( (New-Resource '[SPFarm]APPLICATION_SpsJoinSPFarm' 'SharePointDsc' '5.7.1' $true '38.4' '') )
+$wfe1Not = @( (New-Resource '[SPDistributedCacheService]APPLICATION_SpsEnableDistributedCache' 'SharePointDsc' '5.7.1' $false '5.2' '') )
 $reports['7B1C0A44-9F2E-4C81-B6D3-2A5E9F0C1D22'] = @(
   [ordered]@{ JobId = [guid]::NewGuid().ToString(); Id = '7B1C0A44-9F2E-4C81-B6D3-2A5E9F0C1D22'; OperationType = 'Consistency'; RefreshMode = 'Pull'; Status = 'Success'; ConfigurationVersion = '2.0.0'; NodeName = 'WFE1'; StartTime = $now.AddMinutes(-6).ToString('o'); EndTime = $now.AddMinutes(-5).ToString('o'); Errors = @(); StatusData = (New-StatusData $wfe1In $wfe1Not 'Success' '43.6') }
 )
 
 # SCH1 — Failed
-$sch1In = @( (New-Resource '[SPSearchServiceApp]APPLICATION_SpsSvcAppSearchServiceApp' 'SharePointDsc' '5.7.0' $true '22.0' '') )
-$sch1Not = @( (New-Resource '[SPSearchTopology]APPLICATION_SpsSvcSearchTopo' 'SharePointDsc' '5.7.0' $false '0' 'The search service instance is not online on server SCH1.') )
+$sch1In = @( (New-Resource '[SPSearchServiceApp]APPLICATION_SpsSvcAppSearchServiceApp' 'SharePointDsc' '5.7.1' $true '22.0' '') )
+$sch1Not = @( (New-Resource '[SPSearchTopology]APPLICATION_SpsSvcSearchTopo' 'SharePointDsc' '5.7.1' $false '0' 'The search service instance is not online on server SCH1.') )
 $reports['9C3E1B77-4D6A-4E2F-8B10-6F7A2C4E8D33'] = @(
   [ordered]@{ JobId = [guid]::NewGuid().ToString(); Id = '9C3E1B77-4D6A-4E2F-8B10-6F7A2C4E8D33'; OperationType = 'Consistency'; RefreshMode = 'Pull'; Status = 'Failure'; ConfigurationVersion = '2.0.0'; NodeName = 'SCH1'; StartTime = $now.AddMinutes(-4).ToString('o'); EndTime = $now.AddMinutes(-3).ToString('o'); Errors = @('The search service instance is not online on server SCH1.'); StatusData = (New-StatusData $sch1In $sch1Not 'Failure' '22.0') }
 )

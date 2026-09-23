@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Central Administration can be served over HTTPS on a vanity URL (#63)
+  - New `NonNodeData.SharePoint.CentralAdministrationUrl`: when set to an HTTPS URL (e.g.
+    `https://sharepoint-admin.contoso.com`), `CfgAppSps` provisions Central Administration over
+    SSL on that host instead of `http://<node>:<port>`. `CfgAppPdc` issues a new
+    `SharePointAdminCert` certificate (SAN `sharepoint-admin.contoso.com`) and publishes a
+    matching DNS record. On SharePoint Subscription Edition the certificate is bound through
+    SharePoint Certificate Management (never a manual IIS binding): `SPFarm` provisions the
+    Central Admin HTTPS binding and host header, the `SPCertificate` loop imports
+    `SharePointAdminCert` into the SharePoint certificate store (`EndEntity`) after the farm
+    exists, and a new `Script` resource then binds that managed certificate to the Central Admin
+    Default zone (`Get-SPCertificate` → `Set-SPWebApplication -Certificate
+    -UseServerNameIndication`), mirroring how `SPWebApplicationExtension` binds certificates on
+    SPSE. The Central Admin outgoing-email settings are pointed at the HTTPS URL. The sample now
+    defaults Central Admin to `https://sharepoint-admin.contoso.com` on port 443, with a
+    `SharePointAdminCert` entry added to `Secrets.sample.psd1`. Leave `CentralAdministrationUrl`
+    empty to keep Central Admin on plain HTTP.
 - The domain GPO now pushes the Edge `AuthServerAllowlist` policy (#57)
   - `CfgAppPdc` already provisions an `Edge_browser` GPO (linked to the domain) from
     `NonNodeData.EdgePolicies`. An `AuthServerAllowlist` entry is added to that list so the GPO

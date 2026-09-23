@@ -625,6 +625,27 @@ try {
       #New SPFarm Object
       $sqlAliasADM = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'ADMIN' }
       $sqlAliasSVC = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'SERVICES' }
+      # Serve Central Admin over HTTPS when CentralAdministrationUrl is an https URL: SPFarm
+      # provisions the binding, the SPCertificate loop imports SharePointAdminCert, then a
+      # Script binds it. Empty URL keeps plain HTTP. See wiki/Configuration.md for the flow.
+      $spCentralAdminUrl = $ConfigurationData.NonNodeData.SharePoint.CentralAdministrationUrl
+      $useHttpsCentralAdmin = (-not [string]::IsNullOrWhiteSpace($spCentralAdminUrl)) -and ($spCentralAdminUrl -like 'https://*')
+      if ($useHttpsCentralAdmin) {
+        $spAdminCert = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'SharePointAdminCert' }
+        if ($null -eq $spAdminCert) {
+          throw "NonNodeData.SharePoint.CentralAdministrationUrl is set to an HTTPS URL but no ADC certificate named 'SharePointAdminCert' was found in NonNodeData.ADC.certificates (needed to bind the Central Administration SSL certificate)."
+        }
+        try {
+          $getSPAdminCertificate = Get-CertThumbprint -CertPath "$($spAdminCert.CertPath)"
+        }
+        catch {
+          Write-Error "Failed to retrieve the Central Administration certificate: $_"
+          throw
+        }
+        # Baked into the binding Script below (thumbprint = cert lookup, host = SNI host).
+        $spCentralAdminCertThumbprint = $getSPAdminCertificate.Thumbprint
+        $spCentralAdminHost = ([System.Uri]$spCentralAdminUrl).Host
+      }
       # DatabaseServerCertificateHostName is validated by MSFT_SPFarm with
       # [ValidateNotNullOrEmpty()], so it must be OMITTED entirely when no host name is
       # configured (the default 'Optional' level) — passing an empty string fails at apply.
@@ -642,6 +663,7 @@ try {
           FarmAccount                  = $FARM
           AdminContentDatabaseName     = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
           CentralAdministrationPort    = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+          CentralAdministrationUrl     = "$spCentralAdminUrl"
           RunCentralAdmin              = $true
           ServerRole                   = $Node.SPServerRole
           DatabaseConnectionEncryption = $sqlDbConnectionEncryption
@@ -659,6 +681,7 @@ try {
           FarmAccount                       = $FARM
           AdminContentDatabaseName          = "$($ConfigurationData.NonNodeData.SharePoint.AdminContentDatabaseName)"
           CentralAdministrationPort         = "$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+          CentralAdministrationUrl          = "$spCentralAdminUrl"
           RunCentralAdmin                   = $true
           ServerRole                        = $Node.SPServerRole
           DatabaseConnectionEncryption      = $sqlDbConnectionEncryption
@@ -715,6 +738,21 @@ try {
           CertificatePassword  = (Get-Variable -Name $spCertificate.Name -ValueOnly)
           Exportable           = $true
           DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
+        }
+      }
+
+      # Bind the imported SharePointAdminCert to the Central Admin Default-zone SSL binding.
+      # SPFarm provisions the binding but never assigns a certificate on SPSE — a known gap
+      # tracked upstream at dsccommunity/SharePointDsc#1436 (no native resource yet). Script
+      # bodies are strings so the compile-time thumbprint/host/port are baked in (runtime vars
+      # escaped). Remove this once SPFarm/an SPCentralAdministration resource handles the cert.
+      if ($useHttpsCentralAdmin) {
+        Script APPLICATION_SpsBindCentralAdminCertificate {
+          DependsOn            = '[SPCertificate]APPLICATION_SpsPFXCert_SharePointAdminCert'
+          PsDscRunAsCredential = $SETUP
+          GetScript            = "@{ Result = '' }"
+          TestScript           = "`$ca = Get-SPWebApplication -IncludeCentralAdministration | Where-Object { `$_.IsAdministrationWebApplication -eq `$true }; if (`$null -eq `$ca) { return `$false }; `$b = `$ca.IisSettings[[Microsoft.SharePoint.Administration.SPUrlZone]::Default].SecureBindings; if (`$null -eq `$b -or `$b.Count -eq 0) { return `$false }; return (`$null -ne (`$b | Where-Object { `$_.Certificate.Thumbprint -eq '$($spCentralAdminCertThumbprint)' }))"
+          SetScript            = "`$cert = Get-SPCertificate -Thumbprint '$($spCentralAdminCertThumbprint)' -Store 'EndEntity'; if (`$null -eq `$cert) { throw 'No certificate with thumbprint $($spCentralAdminCertThumbprint) found in SharePoint Certificate Management (EndEntity). Ensure SharePointAdminCert was imported before binding Central Administration.' }; `$ca = Get-SPWebApplication -IncludeCentralAdministration | Where-Object { `$_.IsAdministrationWebApplication -eq `$true }; Set-SPWebApplication -Identity `$ca -Zone Default -Port $($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort) -HostHeader '$($spCentralAdminHost)' -SecureSocketsLayer -Certificate `$cert -UseServerNameIndication"
         }
       }
 
@@ -804,10 +842,18 @@ try {
         }
       }
       #Outgoing Email Settings for Central Administration Web Application
+      # Target the HTTPS Central Admin vanity URL when configured, otherwise the default
+      # http://<node>:<port> address.
+      $spCentralAdminWebAppUrl = if ($useHttpsCentralAdmin) {
+        $spCentralAdminUrl
+      }
+      else {
+        "http://$($Node.NodeName):$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+      }
       SPOutgoingEmailSettings APPLICATION_OutgoingEmailCA {
         DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
         PsDscRunAsCredential = $SETUP
-        WebAppUrl            = "http://$($Node.NodeName):$($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort)"
+        WebAppUrl            = $spCentralAdminWebAppUrl
         CharacterSet         = $ConfigurationData.NonNodeData.SharePoint.MailSettings.CharacterSet
         SMTPServer           = $ConfigurationData.NonNodeData.SharePoint.MailSettings.SMTPServer
         ReplyToAddress       = $ConfigurationData.NonNodeData.SharePoint.MailSettings.ReplyToAddress

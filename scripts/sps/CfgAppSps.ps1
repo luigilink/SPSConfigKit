@@ -741,9 +741,11 @@ try {
         }
       }
 
-      # Bind the imported SharePointAdminCert to the Central Admin Default-zone SSL binding
-      # (SPFarm provisions the binding but leaves it certificate-less on SPSE). Script bodies
-      # are strings so the compile-time thumbprint/host/port are baked in (runtime vars escaped).
+      # Bind the imported SharePointAdminCert to the Central Admin Default-zone SSL binding.
+      # SPFarm provisions the binding but never assigns a certificate on SPSE — a known gap
+      # tracked upstream at dsccommunity/SharePointDsc#1436 (no native resource yet). Script
+      # bodies are strings so the compile-time thumbprint/host/port are baked in (runtime vars
+      # escaped). Remove this once SPFarm/an SPCentralAdministration resource handles the cert.
       if ($useHttpsCentralAdmin) {
         Script APPLICATION_SpsBindCentralAdminCertificate {
           DependsOn            = '[SPCertificate]APPLICATION_SpsPFXCert_SharePointAdminCert'

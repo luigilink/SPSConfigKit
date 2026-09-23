@@ -625,15 +625,23 @@ try {
       #New SPFarm Object
       $sqlAliasADM = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'ADMIN' }
       $sqlAliasSVC = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'SERVICES' }
-      # Central Administration over HTTPS: when NonNodeData.SharePoint.CentralAdministrationUrl
-      # is an https URL, SharePoint provisions Central Admin on that vanity URL and binds the
-      # certificate whose SAN matches the host. Import SharePointAdminCert into LocalMachine\My
-      # *before* the farm is created (the SPCertificate loop that imports into the SharePoint
-      # store only runs after SPFarm), so the binding is available when Central Admin is
-      # provisioned. Leave the URL empty/absent to keep Central Admin on plain HTTP at the port.
+      # Central Administration over HTTPS (SharePoint Subscription Edition). When
+      # NonNodeData.SharePoint.CentralAdministrationUrl is an https URL, Central Admin is
+      # served over SSL on that host in three coordinated steps:
+      #   1. SPFarm provisions the Central Admin HTTPS binding + host header (native
+      #      SharePointDsc behaviour driven by CentralAdministrationUrl). SharePointDsc does
+      #      NOT assign a certificate, so Central Admin is not yet reachable over HTTPS.
+      #   2. SharePointAdminCert is imported into the SharePoint certificate store (EndEntity)
+      #      by the SPCertificate loop below, which necessarily runs *after* the farm exists.
+      #   3. APPLICATION_SpsBindCentralAdminCertificate binds that SharePoint-managed
+      #      certificate to the Central Admin Default-zone SSL binding (Get-SPCertificate ->
+      #      Set-SPWebApplication -Certificate -UseServerNameIndication), which is what makes
+      #      Central Admin actually serve HTTPS. This mirrors how SharePointDsc's
+      #      SPWebApplicationExtension binds a certificate on SPSE — the certificate is always
+      #      managed by SharePoint, never a manual IIS/LocalMachine binding.
+      # Leave the URL empty/absent to keep Central Admin on plain HTTP at the port.
       $spCentralAdminUrl = $ConfigurationData.NonNodeData.SharePoint.CentralAdministrationUrl
       $useHttpsCentralAdmin = (-not [string]::IsNullOrWhiteSpace($spCentralAdminUrl)) -and ($spCentralAdminUrl -like 'https://*')
-      $spFarmDependsOn = @('[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation')
       if ($useHttpsCentralAdmin) {
         $spAdminCert = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object -FilterScript { $_.Name -eq 'SharePointAdminCert' }
         if ($null -eq $spAdminCert) {
@@ -646,19 +654,10 @@ try {
           Write-Error "Failed to retrieve the Central Administration certificate: $_"
           throw
         }
-        PfxImport APPLICATION_SpsAdminCertificateImport {
-          DependsOn  = '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
-          Thumbprint = $getSPAdminCertificate.Thumbprint
-          Path       = "$($spAdminCert.PfxPath)"
-          Store      = 'My'
-          Location   = 'LocalMachine'
-          # Per-cert PFX password: resolves the PSCredential auto-materialised by the secrets
-          # loader in Secrets.psd1 (Name = 'SharePointAdminCert').
-          Credential = (Get-Variable -Name $spAdminCert.Name -ValueOnly)
-          Exportable = $true
-          Ensure     = 'Present'
-        }
-        $spFarmDependsOn += '[PfxImport]APPLICATION_SpsAdminCertificateImport'
+        # Captured at compile time and baked into the binding Script below (thumbprint locates
+        # the imported certificate in SharePoint Certificate Management; host is the SNI host).
+        $spCentralAdminCertThumbprint = $getSPAdminCertificate.Thumbprint
+        $spCentralAdminHost = ([System.Uri]$spCentralAdminUrl).Host
       }
       # DatabaseServerCertificateHostName is validated by MSFT_SPFarm with
       # [ValidateNotNullOrEmpty()], so it must be OMITTED entirely when no host name is
@@ -667,7 +666,7 @@ try {
       # without the property depending on whether a host name was supplied.
       if ([string]::IsNullOrWhiteSpace($sqlDbCertHostName)) {
         SPFarm APPLICATION_SpsCreateSPFarm {
-          DependsOn                    = $spFarmDependsOn
+          DependsOn                    = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
           PsDscRunAsCredential         = $SETUP
           Ensure                       = 'Present'
           IsSingleInstance             = 'Yes'
@@ -685,7 +684,7 @@ try {
       }
       else {
         SPFarm APPLICATION_SpsCreateSPFarm {
-          DependsOn                         = $spFarmDependsOn
+          DependsOn                         = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
           PsDscRunAsCredential              = $SETUP
           Ensure                            = 'Present'
           IsSingleInstance                  = 'Yes'
@@ -752,6 +751,22 @@ try {
           CertificatePassword  = (Get-Variable -Name $spCertificate.Name -ValueOnly)
           Exportable           = $true
           DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
+        }
+      }
+
+      # Bind the SharePoint-managed certificate to the Central Administration HTTPS binding.
+      # SPFarm provisions the Central Admin SSL binding + host header but does not assign a
+      # certificate (SharePointDsc leaves certificate assignment to Certificate Management on
+      # SPSE), so Central Admin is unreachable over HTTPS until the imported SharePointAdminCert
+      # is bound to the Default zone. Get/Test/SetScript are emitted as strings so the compile
+      # time thumbprint/host/port are baked in; runtime variables are escaped with a backtick.
+      if ($useHttpsCentralAdmin) {
+        Script APPLICATION_SpsBindCentralAdminCertificate {
+          DependsOn            = '[SPCertificate]APPLICATION_SpsPFXCert_SharePointAdminCert'
+          PsDscRunAsCredential = $SETUP
+          GetScript            = "@{ Result = '' }"
+          TestScript           = "`$ca = Get-SPWebApplication -IncludeCentralAdministration | Where-Object { `$_.IsAdministrationWebApplication -eq `$true }; if (`$null -eq `$ca) { return `$false }; `$b = `$ca.IisSettings[[Microsoft.SharePoint.Administration.SPUrlZone]::Default].SecureBindings; if (`$null -eq `$b -or `$b.Count -eq 0) { return `$false }; return (`$null -ne (`$b | Where-Object { `$_.Certificate.Thumbprint -eq '$($spCentralAdminCertThumbprint)' }))"
+          SetScript            = "`$cert = Get-SPCertificate -Thumbprint '$($spCentralAdminCertThumbprint)' -Store 'EndEntity'; if (`$null -eq `$cert) { throw 'No certificate with thumbprint $($spCentralAdminCertThumbprint) found in SharePoint Certificate Management (EndEntity). Ensure SharePointAdminCert was imported before binding Central Administration.' }; `$ca = Get-SPWebApplication -IncludeCentralAdministration | Where-Object { `$_.IsAdministrationWebApplication -eq `$true }; Set-SPWebApplication -Identity `$ca -Zone Default -Port $($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort) -HostHeader '$($spCentralAdminHost)' -SecureSocketsLayer -Certificate `$cert -UseServerNameIndication"
         }
       }
 

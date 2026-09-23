@@ -396,16 +396,30 @@ and is the canonical schema &mdash; treat the snippet above as a map.
   `https://sharepoint-admin.contoso.com`), Central Admin is served over SSL on
   that host instead of `http://<node>:<port>`. This requires: a certificate
   named **`SharePointAdminCert`** in `ADC.certificates` whose SAN covers the host
-  (issued by `CfgAppPdc`, imported into `LocalMachine\My` before the farm is
-  created), a matching `Secrets.psd1` entry (PFX password), and a DNS record for
-  the host pointing at the Central Admin node (published by `CfgAppPdc`). Set
-  `CentralAdministrationPort` to match the scheme (`443` for HTTPS). Leave the URL
-  empty/absent to keep Central Admin on plain HTTP at the port.
+  (issued by `CfgAppPdc`), a matching `Secrets.psd1` entry (PFX password), and a
+  DNS record for the host pointing at the Central Admin node (published by
+  `CfgAppPdc`). Set `CentralAdministrationPort` to match the scheme (`443` for
+  HTTPS). Leave the URL empty/absent to keep Central Admin on plain HTTP at the
+  port.
+
+  On SharePoint Subscription Edition the certificate is bound through SharePoint
+  Certificate Management (never a manual IIS binding), in three coordinated steps:
+  1. `SPFarm` provisions the Central Admin HTTPS binding and host header (it does
+     not assign a certificate, so Central Admin is not yet reachable over HTTPS).
+  2. The `SPCertificate` loop imports `SharePointAdminCert` into the SharePoint
+     certificate store (`EndEntity`) after the farm exists.
+  3. A `Script` resource binds that managed certificate to the Central Admin
+     Default zone (`Get-SPCertificate -Store EndEntity` →
+     `Set-SPWebApplication -Certificate -UseServerNameIndication`), which mirrors
+     how `SPWebApplicationExtension` binds certificates on SPSE and is what makes
+     Central Admin serve HTTPS.
+
   > [!NOTE]
-  > The SharePoint SE certificate binding for the Central Administration vanity
-  > URL should be validated on a real farm. If SharePoint does not bind the
-  > certificate at farm creation, import `SharePointAdminCert` with `SPCertificate`
-  > and set the URL with `Set-SPCentralAdministration` after the farm exists.
+  > The SharePoint SE certificate binding for Central Administration should be
+  > validated on a real farm. Verify with `Get-SPWebApplication
+  > -IncludeCentralAdministration | Format-List DisplayName, Url` and confirm the
+  > IIS `SharePoint Central Administration v4` site has an `https` binding on the
+  > expected port with the `SharePointAdmin` certificate and SNI enabled.
 - **`SharePoint.ManagedAccounts`** (optional) &mdash; allowlist of
   `Secrets.psd1` account names that SharePoint should register as
   `SPManagedAccount` resources on the farm master. Defaults to

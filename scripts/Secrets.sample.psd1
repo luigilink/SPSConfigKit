@@ -117,6 +117,14 @@
       Password    = '******************'
     }
     @{
+      Name        = 'SharePointAdminCert'
+      DisplayName = 'SharePoint Admin PFXCred'
+      Description = 'SharePoint Central Administration PFXCred Account'
+      Username    = 'SharePointAdminCert'
+      IsAdAccount = $False
+      Password    = '******************'
+    }
+    @{
       Name        = 'OfficeOnlineCert'
       DisplayName = 'Office Online PFXCred'
       Description = 'Office Online PFXCred Account'

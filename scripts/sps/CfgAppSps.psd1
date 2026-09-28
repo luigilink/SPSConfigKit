@@ -112,6 +112,12 @@
           PfxFileName  = 'SharePoint.pfx'
         }
         @{
+          Name         = 'SharePointAdminCert'
+          FriendlyName = 'SharePointAdmin'
+          CerFileName  = 'SharePointAdmin.cer'
+          PfxFileName  = 'SharePointAdmin.pfx'
+        }
+        @{
           Name         = 'OfficeOnlineCert'
           FriendlyName = 'OOSCertSSL'
           CerFileName  = 'OfficeOnline.cer'
@@ -228,7 +234,13 @@
       UberCumulativeUpdate      = '\\PULL\Softwarepackages\SPS\CU\uber-subscription-kb5002863-fullfile-x64-glb.exe'
       FarmConfigDatabaseName    = 'DSPS_Admin_Config'
       AdminContentDatabaseName  = 'DSPS_Admin_Content'
-      CentralAdministrationPort = '5555'
+      # Central Administration is served over HTTPS on a vanity URL. The port must match the
+      # URL scheme (443 for https). CentralAdministrationUrl requires a matching certificate
+      # whose SAN covers the host (SharePointAdminCert, imported below) and a DNS record for
+      # the host pointing at the Central Admin node (published by CfgAppPdc). Leave
+      # CentralAdministrationUrl empty/absent to keep Central Admin on plain HTTP at the port.
+      CentralAdministrationPort = '443'
+      CentralAdministrationUrl  = 'https://sharepoint-admin.contoso.com'
       MailSettings              = @{
         SMTPServer     = 'smtp.contoso.com'
         FromAddress    = 'noreply@contoso.com'

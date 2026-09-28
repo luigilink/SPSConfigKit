@@ -25,7 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     empty to keep Central Admin on plain HTTP. The binding `Script` retries for up to 5 minutes
     (verifying the binding actually carries the certificate) because right after the
     `SPCertificate` import the certificate can briefly not be bindable yet — this avoids a
-    transient failure that would otherwise self-heal only on the next pull.
+    transient failure that would otherwise self-heal only on the next pull. Both the `Test` and
+    `Set` scripts guard against certificate-less bindings (a binding whose `Certificate` is
+    `$null` before the cert is bound): the thumbprint comparison is skipped instead of
+    dereferencing a missing property, so `Test` never throws `PropertyNotFoundException` — which
+    would otherwise abort the entire configuration run rather than just failing one resource.
 - The domain GPO now pushes the Edge `AuthServerAllowlist` policy (#57)
   - `CfgAppPdc` already provisions an `Edge_browser` GPO (linked to the domain) from
     `NonNodeData.EdgePolicies`. An `AuthServerAllowlist` entry is added to that list so the GPO

@@ -22,7 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     SPSE. The Central Admin outgoing-email settings are pointed at the HTTPS URL. The sample now
     defaults Central Admin to `https://sharepoint-admin.contoso.com` on port 443, with a
     `SharePointAdminCert` entry added to `Secrets.sample.psd1`. Leave `CentralAdministrationUrl`
-    empty to keep Central Admin on plain HTTP.
+    empty to keep Central Admin on plain HTTP. The binding `Script` retries for up to 5 minutes
+    (verifying the binding actually carries the certificate) because right after the
+    `SPCertificate` import the certificate can briefly not be bindable yet — this avoids a
+    transient failure that would otherwise self-heal only on the next pull.
 - The domain GPO now pushes the Edge `AuthServerAllowlist` policy (#57)
   - `CfgAppPdc` already provisions an `Edge_browser` GPO (linked to the domain) from
     `NonNodeData.EdgePolicies`. An `AuthServerAllowlist` entry is added to that list so the GPO

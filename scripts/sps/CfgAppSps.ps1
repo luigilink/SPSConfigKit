@@ -745,14 +745,16 @@ try {
       # SPFarm provisions the binding but never assigns a certificate on SPSE — a known gap
       # tracked upstream at dsccommunity/SharePointDsc#1436 (no native resource yet). Script
       # bodies are strings so the compile-time thumbprint/host/port are baked in (runtime vars
-      # escaped). Remove this once SPFarm/an SPCentralAdministration resource handles the cert.
+      # escaped). The SetScript retries: right after SPCertificate import the cert/binding can
+      # briefly not be bindable yet, so it loops until the binding actually carries the cert.
+      # Remove this once SPFarm/an SPCentralAdministration resource handles the cert.
       if ($useHttpsCentralAdmin) {
         Script APPLICATION_SpsBindCentralAdminCertificate {
           DependsOn            = '[SPCertificate]APPLICATION_SpsPFXCert_SharePointAdminCert'
           PsDscRunAsCredential = $SETUP
           GetScript            = "@{ Result = '' }"
           TestScript           = "`$ca = Get-SPWebApplication -IncludeCentralAdministration | Where-Object { `$_.IsAdministrationWebApplication -eq `$true }; if (`$null -eq `$ca) { return `$false }; `$b = `$ca.IisSettings[[Microsoft.SharePoint.Administration.SPUrlZone]::Default].SecureBindings; if (`$null -eq `$b -or `$b.Count -eq 0) { return `$false }; return (`$null -ne (`$b | Where-Object { `$_.Certificate.Thumbprint -eq '$($spCentralAdminCertThumbprint)' }))"
-          SetScript            = "`$cert = Get-SPCertificate -Thumbprint '$($spCentralAdminCertThumbprint)' -Store 'EndEntity'; if (`$null -eq `$cert) { throw 'No certificate with thumbprint $($spCentralAdminCertThumbprint) found in SharePoint Certificate Management (EndEntity). Ensure SharePointAdminCert was imported before binding Central Administration.' }; `$ca = Get-SPWebApplication -IncludeCentralAdministration | Where-Object { `$_.IsAdministrationWebApplication -eq `$true }; Set-SPWebApplication -Identity `$ca -Zone Default -Port $($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort) -HostHeader '$($spCentralAdminHost)' -SecureSocketsLayer -Certificate `$cert -UseServerNameIndication"
+          SetScript            = "`$thumb = '$($spCentralAdminCertThumbprint)'; `$deadline = (Get-Date).AddMinutes(5); `$bound = `$false; while (-not `$bound -and (Get-Date) -lt `$deadline) { try { `$cert = Get-SPCertificate -Thumbprint `$thumb -Store 'EndEntity' -ErrorAction SilentlyContinue; if (`$null -ne `$cert) { `$ca = Get-SPWebApplication -IncludeCentralAdministration | Where-Object { `$_.IsAdministrationWebApplication -eq `$true }; Set-SPWebApplication -Identity `$ca -Zone Default -Port $($ConfigurationData.NonNodeData.SharePoint.CentralAdministrationPort) -HostHeader '$($spCentralAdminHost)' -SecureSocketsLayer -Certificate `$cert -UseServerNameIndication; `$ca = Get-SPWebApplication -IncludeCentralAdministration | Where-Object { `$_.IsAdministrationWebApplication -eq `$true }; `$b = `$ca.IisSettings[[Microsoft.SharePoint.Administration.SPUrlZone]::Default].SecureBindings; if (`$null -ne (`$b | Where-Object { `$_.Certificate.Thumbprint -eq `$thumb })) { `$bound = `$true } } } catch { }; if (-not `$bound) { Start-Sleep -Seconds 15 } }; if (-not `$bound) { throw ('Failed to bind certificate ' + `$thumb + ' to Central Administration after retrying for 5 minutes. Verify SharePointAdminCert import and the CA HTTPS binding.') }"
         }
       }
 

@@ -240,6 +240,12 @@ try {
     $SPSMaster = $AllNodes.Where{ $_.IsSPSServer -and $_.IsMaster }.NodeName
     $SPSSearchMaster = ($AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') } | Select-Object -First 1).NodeName
 
+    # Distributed Cache: only the first cache node (IsAFCache) provisions the service — it sets
+    # the farm-wide cache size + account and runs the cluster stop/resize/start once. MinRole
+    # auto-provisions the instance on the other cache nodes, so declaring the resource on more
+    # than one node only makes them race on the 30-minute stop/start waits (#75).
+    $dcProvisioner = @($AllNodes.Where{ $_.IsAFCache }.NodeName) | Select-Object -First 1
+
     # Detect whether the farm actually declares an Office Online Server node. When no node
     # carries the IsOOSServer role the OOS install Node block compiles nothing, so the
     # SharePoint side must NOT push the OOS trust / WOPI binding / suppression settings
@@ -821,7 +827,8 @@ try {
       else {
         $dcCacheSizeInMB = $Node.CacheSize
       }
-      if ($Node.IsAFCache) {
+      if ($Node.NodeName -eq $dcProvisioner) {
+        # First cache node: provisions cache size + account farm-wide (MinRole handles the rest).
         SPDistributedCacheService APPLICATION_SpsEnableDistributedCache {
           DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
           PsDscRunAsCredential = $SETUP
@@ -832,7 +839,8 @@ try {
           CreateFirewallRules  = $true
         }
       }
-      else {
+      elseif (-not $Node.IsAFCache) {
+        # Non-cache node: ensure no Distributed Cache instance is running here.
         SPDistributedCacheService APPLICATION_SpsEnableDistributedCache {
           DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
           PsDscRunAsCredential = $SETUP
@@ -843,6 +851,7 @@ try {
           CreateFirewallRules  = $true
         }
       }
+      # Secondary cache node (IsAFCache but not the provisioner): emit nothing — MinRole owns it.
       #Outgoing Email Settings for Central Administration Web Application
       # Target the HTTPS Central Admin vanity URL when configured, otherwise the default
       # http://<node>:<port> address.
@@ -1316,7 +1325,8 @@ try {
       else {
         $dcCacheSizeInMB = $Node.CacheSize
       }
-      if ($Node.IsAFCache) {
+      if ($Node.NodeName -eq $dcProvisioner) {
+        # First cache node: provisions cache size + account farm-wide (MinRole handles the rest).
         SPDistributedCacheService APPLICATION_SpsEnableDistributedCache {
           DependsOn            = '[SPFarm]APPLICATION_SpsJoinSPFarm'
           PsDscRunAsCredential = $SETUP
@@ -1327,7 +1337,8 @@ try {
           CreateFirewallRules  = $true
         }
       }
-      else {
+      elseif (-not $Node.IsAFCache) {
+        # Non-cache node: ensure no Distributed Cache instance is running here.
         SPDistributedCacheService APPLICATION_SpsEnableDistributedCache {
           DependsOn            = '[SPFarm]APPLICATION_SpsJoinSPFarm'
           PsDscRunAsCredential = $SETUP
@@ -1338,6 +1349,7 @@ try {
           CreateFirewallRules  = $false
         }
       }
+      # Secondary cache node (IsAFCache but not the provisioner): emit nothing — MinRole owns it.
       Log APPLICATION_SPSNoMaster_Completed {
         #The message below gets written to the Microsoft-Windows-Desired State Configuration/Analytic log
         Message   = '[SPFarm]Join SharePoint Farm Completed'

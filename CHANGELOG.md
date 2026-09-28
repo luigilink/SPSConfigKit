@@ -78,6 +78,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Distributed Cache is now provisioned by a single cache node (#75)
+  - On an HA farm with more than one cache node (`IsAFCache`), every cache node emitted
+    `SPDistributedCacheService Ensure='Present'`, so each one independently ran
+    `Add-SPDistributedCacheServiceInstance` followed by the resource's *farm-wide* stop / resize /
+    start sequence at the same time. The nodes raced each other on the 30-minute *"waiting for
+    distributed cache to stop/start on all servers"* loops, leaving the cluster unprovisioned and
+    reporting non-deterministic drift (one node compliant, the other stuck). Because the cache
+    size and service account are farm-wide settings and MinRole
+    (`WebFrontEndWithDistributedCache` / `DistributedCache`) already auto-provisions the cache
+    instance on every cache node, only the **first** cache node now declares the resource
+    (`Present`): it applies the size + account and runs the cluster stop/resize/start once. The
+    other cache nodes no longer declare the resource (MinRole owns their instance), and non-cache
+    nodes keep `Ensure='Absent'`. This also means a single node — rather than any cache node whose
+    state briefly drifts — owns the farm-wide cache restart. Single-cache-node farms are unchanged.
 - Search topology now waits for secondary search nodes to join the farm (#72)
   - On a multi-node search farm, the search master built `SPSearchTopology` (assigning search
     components to every search node) with only a local dependency, so it could run before a

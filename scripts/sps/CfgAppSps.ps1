@@ -240,6 +240,14 @@ try {
     $SPSMaster = $AllNodes.Where{ $_.IsSPSServer -and $_.IsMaster }.NodeName
     $SPSSearchMaster = ($AllNodes.Where{ $_.IsSPSServer -and $_.SPServerRole -in @('Search', 'ApplicationWithSearch') } | Select-Object -First 1).NodeName
 
+    # Distributed Cache: the ordered list of cache nodes (IsAFCache) is passed to every
+    # SPDistributedCacheService as ServerProvisionOrder so SharePointDsc serialises provisioning
+    # (each node waits for the previous cache host to be Online before it runs Add + the farm-wide
+    # stop/resize/start). MinRole does NOT auto-start the Distributed Cache on secondary nodes, so
+    # each cache node must provision its own instance — without ordering they race on the 30-minute
+    # stop/start waits and leave the cluster half-provisioned (#75).
+    $dcServers = @($AllNodes.Where{ $_.IsAFCache }.NodeName)
+
     # Detect whether the farm actually declares an Office Online Server node. When no node
     # carries the IsOOSServer role the OOS install Node block compiles nothing, so the
     # SharePoint side must NOT push the OOS trust / WOPI binding / suppression settings
@@ -822,6 +830,7 @@ try {
         $dcCacheSizeInMB = $Node.CacheSize
       }
       if ($Node.IsAFCache) {
+        # Cache node: provision the instance. ServerProvisionOrder serialises across cache nodes.
         SPDistributedCacheService APPLICATION_SpsEnableDistributedCache {
           DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
           PsDscRunAsCredential = $SETUP
@@ -830,9 +839,11 @@ try {
           CacheSizeInMB        = $dcCacheSizeInMB
           ServiceAccount       = $IISAPP.UserName
           CreateFirewallRules  = $true
+          ServerProvisionOrder = $dcServers
         }
       }
       else {
+        # Non-cache node: ensure no Distributed Cache instance is running here.
         SPDistributedCacheService APPLICATION_SpsEnableDistributedCache {
           DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
           PsDscRunAsCredential = $SETUP
@@ -1317,6 +1328,7 @@ try {
         $dcCacheSizeInMB = $Node.CacheSize
       }
       if ($Node.IsAFCache) {
+        # Cache node: provision the instance. ServerProvisionOrder serialises across cache nodes.
         SPDistributedCacheService APPLICATION_SpsEnableDistributedCache {
           DependsOn            = '[SPFarm]APPLICATION_SpsJoinSPFarm'
           PsDscRunAsCredential = $SETUP
@@ -1325,9 +1337,11 @@ try {
           CacheSizeInMB        = $dcCacheSizeInMB
           ServiceAccount       = $IISAPP.UserName
           CreateFirewallRules  = $true
+          ServerProvisionOrder = $dcServers
         }
       }
       else {
+        # Non-cache node: ensure no Distributed Cache instance is running here.
         SPDistributedCacheService APPLICATION_SpsEnableDistributedCache {
           DependsOn            = '[SPFarm]APPLICATION_SpsJoinSPFarm'
           PsDscRunAsCredential = $SETUP

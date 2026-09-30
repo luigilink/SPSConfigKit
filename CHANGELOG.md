@@ -78,6 +78,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Distributed Cache is now provisioned in a deterministic order across cache nodes (#75)
+  - On an HA farm with more than one cache node (`IsAFCache`), every cache node emitted
+    `SPDistributedCacheService Ensure='Present'` **without** `ServerProvisionOrder`, so each node
+    independently ran `Add-SPDistributedCacheServiceInstance` followed by the resource's
+    *farm-wide* stop / resize / start sequence at the same time. The nodes raced each other on the
+    30-minute *"waiting for distributed cache to stop/start on all servers"* loops, leaving the
+    cluster half-provisioned and reporting non-deterministic drift (one node compliant, the other
+    stuck). MinRole (`WebFrontEndWithDistributedCache` / `DistributedCache`) flags a stopped cache
+    host as non-compliant but does **not** start the Distributed Cache instance itself, so each
+    cache node must provision its own instance through DSC. The ordered list of cache nodes is now
+    passed to every `SPDistributedCacheService` as `ServerProvisionOrder`, the native SharePointDsc
+    mechanism that serialises provisioning: each node waits for the previous cache host to come
+    online before it acts. In steady state `Test` short-circuits on the already-provisioned nodes,
+    so the farm-wide resize runs only when a host actually needs (re)provisioning. Single-cache-node
+    farms are unaffected (the order list contains just that node and the wait loop exits
+    immediately).
 - Search topology now waits for secondary search nodes to join the farm (#72)
   - On a multi-node search farm, the search master built `SPSearchTopology` (assigning search
     components to every search node) with only a local dependency, so it could run before a

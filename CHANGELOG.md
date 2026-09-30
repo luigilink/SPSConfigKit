@@ -78,6 +78,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- OOS nodes no longer perform the domain join in DSC (#77)
+  - The `IsOOSServer` Node block still declared `Computer JoinDomain` and a
+    `PendingReboot RebootOnSignalFromJoinDomain`, even though every node is domain-joined by the
+    init script (`Add-DscNodeToDomain.ps1`) before the pull runs — as the SharePoint nodes already
+    are. `PendingReboot` re-detected a phantom post-join reboot on every consistency check, so the
+    OOS node was reported **Non-Compliant** on each pass. Both resources (and the now-unused
+    `ComputerManagementDsc` import) were removed, and `Group AddSPSetupAccountToAdminGroup` no
+    longer depends on the reboot, matching the SharePoint node blocks.
 - Distributed Cache is now provisioned in a deterministic order across cache nodes (#75)
   - On an HA farm with more than one cache node (`IsAFCache`), every cache node emitted
     `SPDistributedCacheService Ensure='Present'` **without** `ServerProvisionOrder`, so each node

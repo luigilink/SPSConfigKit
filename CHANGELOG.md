@@ -5,6 +5,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-09-30
+
 ### Added
 
 - Dashboard header now shows the SPSConfigKit version, and the per-node table shows the last

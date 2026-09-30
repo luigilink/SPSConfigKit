@@ -227,7 +227,6 @@ try {
     #       scripts/init/Initialize-DscNode.psd1 (Modules table).
     #Import the required DSC resources
     Import-DscResource -ModuleName CertificateDsc -ModuleVersion 6.0.0
-    Import-DscResource -ModuleName ComputerManagementDsc -ModuleVersion 10.0.0
     Import-DscResource -ModuleName NetworkingDsc -ModuleVersion 9.1.0
     Import-DscResource -ModuleName OfficeOnlineServerDsc -ModuleVersion 1.5.0
     Import-DscResource -ModuleName PSDscResources -ModuleVersion 2.12.0.0
@@ -1504,28 +1503,14 @@ try {
 
     #For All Office Online servers
     Node $AllNodes.Where{ ($_.IsOOSServer) }.NodeName {
-      # OOS servers are always domain-joined member servers in this kit (the AD DC
-      # is provisioned by CfgAppPdc.ps1, never co-located on an OOS box). Join the
-      # domain, then reboot before anything else runs on the node.
-      Computer JoinDomain {
-        Name       = $Node.NodeName
-        DomainName = $ConfigurationData.NonNodeData.DomainName
-        Credential = $ADSETUP
-      }
-
-      PendingReboot RebootOnSignalFromJoinDomain {
-        Name             = "RebootOnSignalFromJoinDomain"
-        SkipCcmClientSDK = $true
-        DependsOn        = "[Computer]JoinDomain"
-      }
-      $dependsOnSPSSetup = '[PendingReboot]RebootOnSignalFromJoinDomain'
+      # Domain join is done by the init script (Add-DscNodeToDomain.ps1) before the pull,
+      # like the SharePoint nodes — no Computer/JoinDomain or PendingReboot here (#77).
       Group AddSPSetupAccountToAdminGroup {
         GroupName            = "Administrators"
         Ensure               = "Present"
         MembersToInclude     = $Node.LocalAdmins
         Credential           = $ADSETUP
         PsDscRunAsCredential = $ADSETUP
-        DependsOn            = $dependsOnSPSSetup
       }
       #Initialize path variables.
       # Resolution is delegated to Resolve-ProductPaths so customers can override

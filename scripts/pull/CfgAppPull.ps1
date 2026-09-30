@@ -365,6 +365,60 @@ try {
         UseSecurityBestPractices     = $true
         Enable32BitAppOnWin64        = $false
       }
+      # xDscWebService leaves the default request-size caps, so the master node's large
+      # consistency report is rejected (HTTP 413) and its compliance never posts (#79).
+      # Raise the ASP.NET/IIS limits to 30 MB (the WCF binding below is the decisive one).
+      WebConfigProperty MIDDLEWARE_PullServer_MaxRequestLength {
+        DependsOn    = '[xDscWebService]MIDDLEWARE_IIS-PSDSCPullServer'
+        WebsitePath  = 'IIS:\Sites\PSDSCPullServer'
+        Filter       = 'system.web/httpRuntime'
+        PropertyName = 'maxRequestLength'
+        Value        = '30720'
+        Ensure       = 'Present'
+      }
+      WebConfigProperty MIDDLEWARE_PullServer_MaxContentLength {
+        DependsOn    = '[xDscWebService]MIDDLEWARE_IIS-PSDSCPullServer'
+        WebsitePath  = 'IIS:\Sites\PSDSCPullServer'
+        Filter       = 'system.webServer/security/requestFiltering/requestLimits'
+        PropertyName = 'maxAllowedContentLength'
+        Value        = '31457280'
+        Ensure       = 'Present'
+      }
+      # The decisive limit is the WCF maxReceivedMessageSize (64 KB default). It lives in
+      # nested XML that WebConfigProperty can't express, so patch it with a Script.
+      Script MIDDLEWARE_PullServer_WcfMaxMessageSize {
+        DependsOn  = '[xDscWebService]MIDDLEWARE_IIS-PSDSCPullServer'
+        GetScript  = { @{ Result = (Get-Content "$env:SystemDrive\inetpub\PSDSCPullServer\web.config" -Raw -ErrorAction SilentlyContinue) } }
+        TestScript = {
+          $cfg = "$env:SystemDrive\inetpub\PSDSCPullServer\web.config"
+          if (-not (Test-Path $cfg)) { return $false }
+          [xml]$xml = Get-Content $cfg -Raw
+          $binding = $xml.SelectSingleNode("/configuration/system.serviceModel/bindings/webHttpBinding/binding")
+          ($null -ne $binding) -and ($binding.maxReceivedMessageSize -eq '31457280')
+        }
+        SetScript  = {
+          $cfg = "$env:SystemDrive\inetpub\PSDSCPullServer\web.config"
+          [xml]$xml = Get-Content $cfg -Raw
+          $ns = $xml.DocumentElement
+          $svcModel = $xml.SelectSingleNode("/configuration/system.serviceModel")
+          if (-not $svcModel) { $svcModel = $ns.AppendChild($xml.CreateElement('system.serviceModel')) }
+          $bindings = $svcModel.SelectSingleNode('bindings')
+          if (-not $bindings) { $bindings = $svcModel.AppendChild($xml.CreateElement('bindings')) }
+          $webHttp = $bindings.SelectSingleNode('webHttpBinding')
+          if (-not $webHttp) { $webHttp = $bindings.AppendChild($xml.CreateElement('webHttpBinding')) }
+          $binding = $webHttp.SelectSingleNode('binding')
+          if (-not $binding) { $binding = $webHttp.AppendChild($xml.CreateElement('binding')) }
+          $binding.SetAttribute('maxReceivedMessageSize', '31457280')
+          $binding.SetAttribute('maxBufferSize', '31457280')
+          $binding.SetAttribute('maxBufferPoolSize', '31457280')
+          $rq = $binding.SelectSingleNode('readerQuotas')
+          if (-not $rq) { $rq = $binding.AppendChild($xml.CreateElement('readerQuotas')) }
+          foreach ($q in 'maxDepth', 'maxStringContentLength', 'maxArrayLength', 'maxBytesPerRead', 'maxNameTableCharCount') {
+            $rq.SetAttribute($q, '2147483647')
+          }
+          $xml.Save($cfg)
+        }
+      }
       File MIDDLEWARE_PullServer_RegistrationKeyFile {
         Ensure          = 'Present'
         Type            = 'File'

@@ -126,6 +126,7 @@ $PullServerUrl        = Get-SettingValue $settings.PullServerUrl     'https://lo
 $OutputPath           = Get-SettingValue $settings.OutputPath        (Join-Path -Path $scriptBase -ChildPath 'Dashboard.html')
 $Title                = Get-SettingValue $settings.Title             'SharePoint Farm — DSC Compliance'
 $MaxReportsPerNode    = Get-SettingValue $settings.MaxReportsPerNode 50
+$KitVersion           = Get-SettingValue $settings.KitVersion        ''
 $NodeManifestPath     = $settings.NodeManifestPath
 $NodeManifestShare    = $settings.NodeManifestShare
 $MockDataPath         = $settings.MockDataPath
@@ -397,13 +398,20 @@ function ConvertTo-NodeCompliance {
     elseif ($notCount -gt 0) {
       $state = 'NonCompliant'
     }
-    elseif ($latest.Status -eq 'Success') {
+    elseif ($inCount -gt 0) {
       $state = 'Compliant'
     }
     else {
-      $state = 'Unknown'
+      # A report with no resources (e.g. a Get-Action / Initial report, or a run
+      # whose large StatusData never posted) is not proof of compliance — don't
+      # render it green. Mark it Stale so the empty 0/0 can't masquerade as healthy.
+      $state = 'Stale'
     }
   }
+
+  # Type of the selected report (Consistency / Initial / …) for the "Last check"
+  # column; empty when no usable report exists.
+  $reportType = if ($latest) { [string]$latest.OperationType } else { '' }
 
   return [pscustomobject]@{
     NodeName             = $nodeName
@@ -419,6 +427,7 @@ function ConvertTo-NodeCompliance {
     Errors               = $errors
     Resources            = $resources
     ReportCount          = $relevant.Count
+    ReportType           = $reportType
   }
 }
 
@@ -429,13 +438,15 @@ function ConvertTo-NodeCompliance {
 function ConvertTo-DashboardHtml {
   param(
     [System.Object[]] $Nodes,
-    [System.String]   $Heading
+    [System.String]   $Heading,
+    [System.String]   $KitVersion
   )
 
   $stateMeta = @{
     Compliant    = @{ Label = 'Compliant';     Var = '--ok' }
     NonCompliant = @{ Label = 'Non-Compliant'; Var = '--warn' }
     Failed       = @{ Label = 'Failed';        Var = '--err' }
+    Stale        = @{ Label = 'Stale / No data'; Var = '--muted-fg' }
     Unresponsive = @{ Label = 'Unresponsive';  Var = '--muted-fg' }
     Unknown      = @{ Label = 'Unknown';       Var = '--muted-fg' }
     Pending      = @{ Label = 'Pending';       Var = '--muted-fg' }
@@ -471,12 +482,13 @@ function ConvertTo-DashboardHtml {
   $rowsHtml = ''
   $detailsHtml = ''
   foreach ($n in ($Nodes | Sort-Object @{ Expression = {
-          switch ($_.ComplianceState) { 'Failed' { 0 } 'NonCompliant' { 1 } 'Unresponsive' { 2 } 'Compliant' { 4 } default { 3 } } }
+          switch ($_.ComplianceState) { 'Failed' { 0 } 'NonCompliant' { 1 } 'Unresponsive' { 2 } 'Stale' { 3 } 'Compliant' { 5 } default { 4 } } }
       }, NodeName)) {
     $meta = $stateMeta[$n.ComplianceState]
     if (-not $meta) { $meta = $stateMeta['Unknown'] }
     $lastSeenTxt = Format-DscTimestamp $n.LastSeen 'yyyy-MM-dd HH:mm'
-    $driftTxt = if ($n.ComplianceState -eq 'Unresponsive') { '—' } else { "$($n.ResourcesNotInDesired) / $($n.TotalResources)" }
+    $driftTxt = if ($n.ComplianceState -in @('Unresponsive', 'Stale')) { '—' } else { "$($n.ResourcesNotInDesired) / $($n.TotalResources)" }
+    $lastCheckTxt = if ($n.ReportType) { ConvertTo-HtmlText $n.ReportType } else { '—' }
     $anchor = 'node-' + ($n.AgentId -replace '[^A-Za-z0-9]', '')
 
     $rowsHtml += @"
@@ -484,7 +496,7 @@ function ConvertTo-DashboardHtml {
         <td><a class="node-link" href="#$anchor">$(ConvertTo-HtmlText $n.NodeName)</a></td>
         <td><span class="pill" style="--pill: var($($meta.Var));">$($meta.Label)</span></td>
         <td class="mono">$(ConvertTo-HtmlText $n.ConfigurationName)</td>
-        <td class="mono">$(ConvertTo-HtmlText ([string]$n.ConfigurationVersion))</td>
+        <td class="mono">$lastCheckTxt</td>
         <td>$driftTxt</td>
         <td class="mono">$lastSeenTxt</td>
       </tr>
@@ -525,7 +537,8 @@ function ConvertTo-DashboardHtml {
       </summary>
       <div class="node-body">
         <div class="kv">
-          <div><span class="k">Configuration</span><span class="v mono">$(ConvertTo-HtmlText $n.ConfigurationName) $(ConvertTo-HtmlText ([string]$n.ConfigurationVersion))</span></div>
+          <div><span class="k">Configuration</span><span class="v mono">$(ConvertTo-HtmlText $n.ConfigurationName)</span></div>
+          <div><span class="k">Last check</span><span class="v mono">$(if ($n.ReportType) { ConvertTo-HtmlText $n.ReportType } else { '—' })</span></div>
           <div><span class="k">Last report</span><span class="v mono">$(Format-DscTimestamp $n.LastSeen 'yyyy-MM-dd HH:mm:ss')</span></div>
           <div><span class="k">Run duration</span><span class="v mono">$(if ($n.DurationInSeconds) { "$($n.DurationInSeconds)s" } else { '—' })</span></div>
           <div><span class="k">Resources</span><span class="v">$($n.ResourcesInDesired) in state, $($n.ResourcesNotInDesired) drifted</span></div>
@@ -720,7 +733,7 @@ $resRows
     </button>
     <p class="eyebrow">SPSConfigKit · DSC Pull Server</p>
     <h1>$(ConvertTo-HtmlText $Heading)</h1>
-    <p class="sub">Compliance snapshot generated $generated · $total node(s)</p>
+    <p class="sub">Compliance snapshot generated $generated · $total node(s)$(if ($KitVersion) { " · SPSConfigKit $(ConvertTo-HtmlText $KitVersion)" })</p>
   </header>
 
   <div class="grid-top">
@@ -761,7 +774,7 @@ $resRows
   <div class="card">
     <table class="nodes">
       <thead>
-        <tr><th>Node</th><th>Status</th><th>Configuration</th><th>Version</th><th>Drift</th><th>Last report</th></tr>
+        <tr><th>Node</th><th>Status</th><th>Configuration</th><th>Last check</th><th>Drift</th><th>Last report</th></tr>
       </thead>
       <tbody>
 $rowsHtml
@@ -829,7 +842,7 @@ function Invoke-DashboardGenerate {
     ConvertTo-NodeCompliance -Node $node -Reports $nodeReports
   }
 
-  $html = ConvertTo-DashboardHtml -Nodes @($compliance) -Heading $Title
+  $html = ConvertTo-DashboardHtml -Nodes @($compliance) -Heading $Title -KitVersion $KitVersion
   # UTF-8 with BOM so browsers and Windows tooling agree on the encoding.
   $enc = New-Object System.Text.UTF8Encoding($true)
   [System.IO.File]::WriteAllText($OutputPath, $html, $enc)

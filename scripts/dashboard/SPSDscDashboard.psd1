@@ -42,7 +42,7 @@
 
     # SPSConfigKit version shown in the dashboard header. Bump this at release time
     # (matches the git tag / CHANGELOG, e.g. '1.7.3'). Leave empty to hide it.
-    KitVersion           = '1.7.3'
+    KitVersion           = '1.8.0'
 
     # Cap on reports fetched per node before selecting the latest (guards the
     # unbounded ESENT StatusReport table).

@@ -1160,13 +1160,19 @@ try {
       # and ExcludedOUs is not exposed — scope the import with IncludedOUs.
       $uspSyncConn = $ConfigurationData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection
       if ($null -ne $uspSyncConn) {
+        # SPUserProfileSyncConnection splits the credential UserName on '\' (domain\user),
+        # so a UPN-form or container account compiles but fails at convergence. Fail fast.
+        $uspSyncCred = (Get-Variable -Name $uspSyncConn.SyncAccount -ValueOnly)
+        if ($uspSyncCred.UserName -notmatch '^[^\\]+\\[^\\]+$') {
+          throw ("NonNodeData.SharePoint.Services.UserProfile.SyncConnection.SyncAccount '{0}' resolves to UserName '{1}', which is not in the required DOMAIN\user form expected by SPUserProfileSyncConnection." -f $uspSyncConn.SyncAccount, $uspSyncCred.UserName)
+        }
         SPUserProfileSyncConnection APPLICATION_SpsSvcAppUserProfileSyncConnection {
           DependsOn             = '[SPUserProfileServiceApp]APPLICATION_SpsSvcAppUserProfileServiceApp'
           PsDscRunAsCredential  = $SETUP
           UserProfileService    = $uspSvcAppName
           Name                  = ($uspSyncConn.Forest -replace '\.', '-')
           Forest                = $uspSyncConn.Forest
-          ConnectionCredentials = (Get-Variable -Name $uspSyncConn.SyncAccount -ValueOnly)
+          ConnectionCredentials = $uspSyncCred
           IncludedOUs           = $uspSyncConn.IncludedOUs
           ConnectionType        = 'ActiveDirectory'
           Ensure                = 'Present'

@@ -23,16 +23,18 @@
   Provisions My Sites (personal sites) for imported user profiles.
 
 .DESCRIPTION
-  Run ONCE from the SharePoint Management Shell on a SharePoint server after the
-  User Profile AD Import has populated the profile store. Creating personal sites
-  is a one-shot operation, not a desired state, so it lives in this script rather
-  than a DSC resource.
+  Run ONCE from an elevated SharePoint Management Shell on a SharePoint server,
+  as the SharePoint farm account (the "System Account"), after the User Profile
+  AD Import has populated the profile store. Creating personal sites is a one-shot
+  operation, not a desired state, so it lives in this script rather than a DSC
+  resource.
 
-  Run it as an account that is a User Profile Service Application administrator
-  with the "Manage Profiles" permission — for example the farm setup account,
-  which CfgAppSps already grants Full Control on the User Profile Service
-  Application (Administrators and SharingPermissions). Running as an account
-  without that permission fails with an access-denied error.
+  The farm account is required because creating personal sites on behalf of other
+  users goes through self-service site creation, which only the farm account is
+  allowed to perform — any other account, even a User Profile Service Application
+  administrator, is denied in SelfServiceCreateSite. The script verifies this and
+  stops with a clear message if it is run as any other account, or from a
+  non-elevated shell (#Requires -RunAsAdministrator).
 
   The script:
     * reads the ConfigurationData (CfgAppSps.psd1) and Secrets (Secrets.psd1),
@@ -107,6 +109,16 @@ if (-not (Get-Command -Name 'Get-SPSite' -ErrorAction SilentlyContinue)) {
     throw 'SharePoint cmdlets are not available. Run this script from the SharePoint Management Shell on a SharePoint farm server.'
 }
 
+# Creating personal sites goes through self-service site creation, which only the SharePoint farm
+# account (the "System Account") is allowed to perform on behalf of other users — any other account,
+# even a User Profile Service Application administrator, hits Access Denied in SelfServiceCreateSite.
+# Fail fast if the shell is not running as the farm account.
+$farmAccount = (Get-SPFarm).TimerService.ProcessIdentity.Username
+$currentAccount = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+if ($currentAccount -ne $farmAccount) {
+    throw ("This script must run as the SharePoint farm account ('{0}'), which owns site provisioning. The current account is '{1}'. Open the SharePoint Management Shell (elevated) as the farm account and retry." -f $farmAccount, $currentAccount)
+}
+
 # Build the set of service-account sAMAccountNames to exclude (real users keep a My Site).
 $excludedSam = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($sa in $secretsData.serviceAccounts) {
@@ -127,7 +139,7 @@ try {
     $profileManager = New-Object -TypeName 'Microsoft.Office.Server.UserProfiles.UserProfileManager' -ArgumentList $context
 }
 catch [System.UnauthorizedAccessException] {
-    throw ("Access denied building the UserProfileManager. Run this script as a User Profile Service Application administrator with the 'Manage Profiles' permission (e.g. the farm setup account). Details: {0}" -f $_.Exception.Message)
+    throw ("Access denied building the UserProfileManager. Run this script as the SharePoint farm account from an elevated SharePoint Management Shell. Details: {0}" -f $_.Exception.Message)
 }
 
 $created = 0

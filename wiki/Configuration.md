@@ -211,11 +211,21 @@ the My Site **host** content database.
 The companion **`scripts/sps/Invoke-MySiteProvisioning.ps1`** script pre-creates the personal
 sites after the service is configured: it enumerates the User Profile Service profiles, skips the
 service accounts listed in `Secrets.psd1`, calls `CreatePersonalSite()` for each remaining user,
-and applies the quota template. Run it **from the SharePoint Management Shell** (which exposes the
-SharePoint cmdlets — on Subscription Edition they are not loadable via `Import-Module` or
-`Add-PSSnapin`), as an account that is a **User Profile Service Application administrator with the
-"Manage Profiles" permission** (for example the farm setup account, which `CfgAppSps` already grants
-Full Control on the UPA). Use `-WhatIf` first to preview the sites that would be created.
+and applies the quota template. Run it from an **elevated SharePoint Management Shell** (which
+exposes the SharePoint cmdlets — on Subscription Edition they are not loadable via `Import-Module`
+or `Add-PSSnapin`), **as the SharePoint farm account** (the "System Account"). The farm account is
+required because creating personal sites on behalf of other users goes through self-service site
+creation, which only the farm account may perform — any other account (even a User Profile Service
+Application administrator) is denied in `SelfServiceCreateSite`. The script verifies this and stops
+if run as any other account or from a non-elevated shell. Use `-WhatIf` first to preview the sites
+that would be created.
+
+> [!TIP]
+> In the User Profile Service Application, under **Setup My Sites → My Site Cleanup**, set a
+> **Secondary Owner** (e.g. the SharePoint FARM account). When a user's profile is deleted, their
+> My Site is retained for 30 days and access is granted to the manager or, failing that, this
+> secondary owner, so content can be recovered before the site is removed. This is optional and
+> independent of provisioning, but recommended for governance.
 
 > [!NOTE]
 > Microsoft-supported limits used by the sizing model: 200 GB per content database and up to 10 000

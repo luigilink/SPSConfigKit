@@ -105,6 +105,7 @@ relevant to your deployment.
 | `SQLSERVER`, `SQLServerCert`                                                                     | SQL (`CfgAppSql`)       | No (standard deployment)         |
 | `PULLSETUP`, `IISPULLAPP`, `DscPullCert`                                                         | PULL server (`CfgAppPull`) | **Yes** — only when a node declares `IsPullServer` |
 | `SETUP`, `FARM`, `IISAPP`, `SEARCH`, `CONTENT`, `SUPERUSER`, `SUPEREADER`, `Passphrase`, `SharePointCert`, `OfficeOnlineCert` | SharePoint (`CfgAppSps`) | No — core farm accounts          |
+| `ADSYNC`                                                                                        | User Profile AD Import (`CfgAppSps`; lab grant in `CfgAppPdc`) | **Yes** — only when User Profile AD Import is used |
 
 - The **AD / PDC** brick provisions an Active Directory domain controller. It is
   meant for labs and demos; in production the domain already exists, so these
@@ -123,6 +124,22 @@ relevant to your deployment.
 > `@('FARM', 'IISAPP', 'SEARCH')`). Anything outside that allowlist — including
 > the PULL / SQL / OOS accounts above — is intentionally ignored and never
 > reaches the SharePoint MOF.
+
+### User Profile AD Import sync account (`ADSYNC`)
+
+The User Profile Service Application runs in **AD Import** mode (`NoILMUsed = $true`).
+AD Import reads user objects directly from Active Directory using a dedicated **sync
+account** (`ADSYNC`, e.g. `CONTOSO\svcspsync`). That account must hold the **Replicate
+Directory Changes** permission on the domain it synchronises with.
+
+- **Production**: the account and its *Replicate Directory Changes* grant are provided by
+  your AD team. Add the account to `Secrets.psd1` so the farm can use its credential — the
+  kit changes nothing in your directory.
+- **Lab / demo (`CfgAppPdc`)**: when an `ADSYNC` entry is present, `CfgAppPdc` creates the
+  account and grants it *Replicate Directory Changes* (the `DS-Replication-Get-Changes`
+  extended right) on the domain root via the `ADObjectPermissionEntry` resource. This runs
+  only on the lab domain controller (inside the `IsADSServer` block) and is skipped entirely
+  when no `ADSYNC` entry exists.
 
 ### How the loader uses `IsAdAccount`
 

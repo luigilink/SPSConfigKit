@@ -5,6 +5,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Provision the User Profile AD Import sync account on the lab domain controller (#84)
+  - User Profile AD Import needs a sync account that holds the **Replicate Directory Changes**
+    permission on the domain. `Secrets.sample.psd1` gains an `ADSYNC` service account
+    (`CONTOSO\svcspsync`), created by the existing `ADUser` loop, and `CfgAppPdc` grants it the
+    `DS-Replication-Get-Changes` extended right on the domain root via the native
+    `ADObjectPermissionEntry` resource (idempotent, least privilege — not the `-All` variant). The
+    grant is emitted only when an `ADSYNC` entry exists in `Secrets.psd1`, and lives inside the
+    `IsADSServer` block, so it runs only on the lab domain controller. Real farms rely on the
+    customer-provided sync account instead; this is a lab convenience.
+
 ## [1.8.0] - 2026-09-30
 
 ### Added

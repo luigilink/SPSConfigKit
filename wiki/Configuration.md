@@ -232,6 +232,14 @@ that would be created.
 > personal sites per database. The default `MaxDBSizeGB = 100` stays comfortably under the 200 GB
 > limit; the kit warns if you set it higher and caps `MaximumSiteCount` at 10 000.
 
+> [!NOTE]
+> Personal sites are created under the `personal` wildcard managed path (e.g.
+> `https://sharepoint.contoso.com/personal/<user>`). You do not need to declare this path in the
+> web application's `ManagedPath` list: SharePoint provisions it automatically when the User Profile
+> Service Application is created with a My Site host location (`SPUserProfileServiceApp` +
+> `MySiteHostLocation`, which the kit already configures). You can confirm it exists with
+> `Get-SPManagedPath -WebApplication <url>` (look for `personal` / `WildcardInclusion`).
+
 ### How the loader uses `IsAdAccount`
 
 - `IsAdAccount -ne $false` is the filter that selects AD accounts. Because

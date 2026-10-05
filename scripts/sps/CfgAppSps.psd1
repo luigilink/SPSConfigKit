@@ -355,6 +355,15 @@
           SocialDBName       = 'DSPS_SVC_UserProfile_Social'
           SyncDBName         = 'DSPS_SVC_UserProfile_Sync'
           MySiteHostLocation = 'https://sharepoint.contoso.com'
+          # Optional AD Import synchronization connection. Remove the whole
+          # SyncConnection block to skip it (no connection is then provisioned).
+          SyncConnection     = @{
+            Name        = 'contoso.com'                   # connection display name
+            Forest      = 'contoso.com'                   # AD forest to import from
+            SyncAccount = 'ADSYNC'                        # Secrets account -> import credential
+            IncludedOUs = @('OU=INT,DC=contoso,DC=com')   # OUs holding the users to import
+            ExcludedOUs = @()                             # optional OUs to ignore
+          }
         }
         ManagedMetadataService      = @{
           Name         = 'SVCManagedMetadataService'

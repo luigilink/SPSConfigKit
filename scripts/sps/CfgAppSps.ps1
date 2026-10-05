@@ -1151,6 +1151,24 @@ try {
         Ensure               = 'Present'
         NoILMUsed            = $true
       }
+      # User Profile AD Import synchronization connection (optional; #86). Emitted
+      # only when a SyncConnection block is declared. ConnectionCredentials resolves
+      # the Secrets account named by SyncAccount (same pattern as cert passwords).
+      $uspSyncConn = $ConfigurationData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection
+      if ($null -ne $uspSyncConn) {
+        SPUserProfileSyncConnection APPLICATION_SpsSvcAppUserProfileSyncConnection {
+          DependsOn             = '[SPUserProfileServiceApp]APPLICATION_SpsSvcAppUserProfileServiceApp'
+          PsDscRunAsCredential  = $SETUP
+          UserProfileService    = $uspSvcAppName
+          Name                  = $uspSyncConn.Name
+          Forest                = $uspSyncConn.Forest
+          ConnectionCredentials = (Get-Variable -Name $uspSyncConn.SyncAccount -ValueOnly)
+          IncludedOUs           = $uspSyncConn.IncludedOUs
+          ExcludedOUs           = @($uspSyncConn.ExcludedOUs)
+          ConnectionType        = 'ActiveDirectory'
+          Ensure                = 'Present'
+        }
+      }
       #Manage Managed Metadata Service Application Permissions
       $membersToIncludeMMS = @()
       $membersToIncludeMMS += MSFT_SPServiceAppSecurityEntry {

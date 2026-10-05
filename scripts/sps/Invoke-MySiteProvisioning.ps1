@@ -119,16 +119,19 @@ if ($currentAccount -ne $farmAccount) {
     throw ("This script must run as the SharePoint farm account ('{0}'), which owns site provisioning. The current account is '{1}'. Open the SharePoint Management Shell (elevated) as the farm account and retry." -f $farmAccount, $currentAccount)
 }
 
-# Build the set of service-account sAMAccountNames to exclude (real users keep a My Site).
-$excludedSam = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+# Build the set of service accounts to exclude (real users keep a My Site). Match on the full
+# DOMAIN\user identity, not just sAMAccountName: a sAMAccountName is unique only within a domain,
+# so in a multi-domain forest CHILD\svcspsearch must not be skipped merely because Secrets.psd1
+# lists CONTOSO\svcspsearch.
+$excludedAccounts = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($sa in $secretsData.serviceAccounts) {
-    if ($null -eq $sa.Username) { continue }
-    [void]$excludedSam.Add(($sa.Username -replace '.*\\', ''))
+    if ([string]::IsNullOrWhiteSpace($sa.Username)) { continue }
+    [void]$excludedAccounts.Add($sa.Username)
 }
 
 Write-Host "My Site host    : $mySiteHostLocation"
 Write-Host "Quota template  : $quotaTemplateName"
-Write-Host "Excluded accts  : $($excludedSam.Count) service account(s)"
+Write-Host "Excluded accts  : $($excludedAccounts.Count) service account(s)"
 
 $site = Get-SPSite -Identity $mySiteHostLocation -ErrorAction Stop
 $context = Get-SPServiceContext -Site $site
@@ -161,9 +164,7 @@ while ($profileEnumerator.MoveNext()) {
         continue
     }
 
-    $sam = $accountName -replace '.*\\', ''
-
-    if ($excludedSam.Contains($sam)) {
+    if ($excludedAccounts.Contains($accountName)) {
         $skipped++
         continue
     }
@@ -212,3 +213,9 @@ while ($profileEnumerator.MoveNext()) {
 $site.Dispose()
 
 Write-Host ("Done. Created: {0}  Skipped: {1}  Failed: {2}" -f $created, $skipped, $failed)
+
+# Terminate with an error when any profile failed, so scheduled/automated runs do not report
+# success while leaving users unprovisioned.
+if ($failed -gt 0) {
+    throw ("My Site provisioning completed with {0} failure(s); see the warnings above." -f $failed)
+}

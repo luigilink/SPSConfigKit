@@ -1185,10 +1185,16 @@ try {
       $mySiteCfg = $ConfigurationData.NonNodeData.SharePoint.Services.MySite
       if ($null -ne $mySiteCfg) {
         # Resolve the web application hosting the My Site host so the content databases
-        # depend on it (they cannot be attached before the web application exists).
+        # depend on it (they cannot be attached before the web application exists). It must be
+        # the application that actually contains the configured My Site host collection,
+        # otherwise the dedicated databases would attach to a different application than the one
+        # CreatePersonalSite() provisions into.
         $msWebApp = $ConfigurationData.NonNodeData.SharePoint.WebApplications | Where-Object { $_.Url -eq $mySiteCfg.WebAppUrl } | Select-Object -First 1
         if ($null -eq $msWebApp) {
           throw ("NonNodeData.SharePoint.Services.MySite.WebAppUrl ({0}) does not match any declared WebApplications Url." -f $mySiteCfg.WebAppUrl)
+        }
+        if ($mySiteHostLocation -notlike ("{0}*" -f $mySiteCfg.WebAppUrl.TrimEnd('/'))) {
+          throw ("NonNodeData.SharePoint.Services.MySite.WebAppUrl ({0}) is not the web application that hosts the My Site host location ({1})." -f $mySiteCfg.WebAppUrl, $mySiteHostLocation)
         }
         $msQuotaMaxMB = [uint32]$mySiteCfg.QuotaMaxMB
         $msQuotaWarnMB = if ($null -ne $mySiteCfg.QuotaWarningMB) { [uint32]$mySiteCfg.QuotaWarningMB } else { [uint32][math]::Floor($msQuotaMaxMB * 0.9) }
@@ -1212,6 +1218,9 @@ try {
           $msMaxSiteCount = 10000
         }
         $msWarnSiteCount = if ($null -ne $mySiteCfg.WarningSiteCount) { [uint32]$mySiteCfg.WarningSiteCount } else { [uint32][math]::Floor($msMaxSiteCount * 0.9) }
+        if ($msWarnSiteCount -gt $msMaxSiteCount) {
+          throw ("NonNodeData.SharePoint.Services.MySite.WarningSiteCount ({0}) exceeds MaximumSiteCount ({1}): the warning threshold could never be reached." -f $msWarnSiteCount, $msMaxSiteCount)
+        }
         # Number of databases: enough to hold UserCount personal sites, by storage AND by the
         # per-DB site capacity (the latter matters once MaximumSiteCount is floored/capped).
         $msStorageDBs = [int][math]::Ceiling(([double]$mySiteCfg.UserCount * $msQuotaMaxMB) / $msMaxDBSizeMB)

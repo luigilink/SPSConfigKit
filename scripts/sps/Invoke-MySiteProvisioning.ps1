@@ -122,6 +122,14 @@ $failed = 0
 
 foreach ($userProfile in $profileManager) {
     $accountName = [string]$userProfile.AccountName          # DOMAIN\sAMAccountName
+
+    # Some entries enumerated from the UserProfileManager have no AccountName
+    # (placeholder/system profiles); skip them so we never act on an empty identity.
+    if ([string]::IsNullOrWhiteSpace($accountName)) {
+        $skipped++
+        continue
+    }
+
     $sam = $accountName -replace '.*\\', ''
 
     if ($excludedSam.Contains($sam)) {

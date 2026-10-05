@@ -11,12 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - With the sync account in place (#84), `CfgAppSps` now declares a native
     `SPUserProfileSyncConnection` so the User Profile Service actually imports users from Active
     Directory. It reads an optional `Services.UserProfile.SyncConnection` block from the `.psd1`
-    (`Name`, `Forest`, `SyncAccount`, `IncludedOUs`, optional `ExcludedOUs`), resolves the import
-    credential from the named Secrets account (the same `Get-Variable` pattern used for certificate
-    passwords), and sets `ConnectionType = 'ActiveDirectory'`. The whole resource is emitted only
-    when the `SyncConnection` block is present, so farms that don't use AD Import are unaffected. No
+    (`Forest`, `SyncAccount`, `IncludedOUs`), resolves the import credential from the named Secrets
+    account (the same `Get-Variable` pattern used for certificate passwords), and sets
+    `ConnectionType = 'ActiveDirectory'`. The whole resource is emitted only when the
+    `SyncConnection` block is present, so farms that don't use AD Import are unaffected. No
     `SPUserProfileSyncService` is added — that is for legacy FIM/MIM sync, not AD Import
-    (`NoILMUsed = $true` stays).
+    (`NoILMUsed = $true` stays). Because the kit targets SharePoint Subscription Edition, where the
+    resource forces the connection name to the forest with dots as dashes and does not reconcile an
+    excluded-OU list, the connection name is derived from `Forest` (not exposed) and `ExcludedOUs`
+    is not exposed — the import scope is defined by `IncludedOUs`.
 
 - Provision the User Profile AD Import sync account on the lab domain controller (#84)
   - User Profile AD Import needs a sync account that holds the **Replicate Directory Changes**

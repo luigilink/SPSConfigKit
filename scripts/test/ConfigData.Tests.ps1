@@ -460,10 +460,9 @@ Describe 'SharePoint configuration' -Skip:(-not $hasSps) {
     It 'references a SyncAccount that exists in Secrets.psd1' {
       $script:SecretNames | Should -Contain $script:ConfigData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection.SyncAccount
     }
-    It 'declares a non-empty Forest, Name and IncludedOUs' {
+    It 'declares a non-empty Forest and IncludedOUs' {
       $sc = $script:ConfigData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection
       $sc.Forest | Should -Not -BeNullOrEmpty
-      $sc.Name | Should -Not -BeNullOrEmpty
       @($sc.IncludedOUs).Where({ $_ }).Count | Should -BeGreaterThan 0
     }
   }

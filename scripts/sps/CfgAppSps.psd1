@@ -368,10 +368,11 @@
         }
         # Optional My Site provisioning. Remove the whole MySite block to skip it
         # (no quota template or personal-site content databases are then created).
-        # The number of content databases is computed from UserCount, QuotaMaxMB and
-        # MaxDBSizeGB: ceil(UserCount * QuotaMaxMB / (MaxDBSizeGB * 1024)). Set any of
-        # NumberOfDatabases / MaximumSiteCount / WarningSiteCount to override the
-        # computed value. WebAppUrl is the My Site host web application.
+        # The number of content databases is computed as the larger of the storage-based
+        # count ceil(UserCount * QuotaMaxMB / (MaxDBSizeGB * 1024)) and the site-capacity
+        # count ceil(UserCount / MaximumSiteCount). Set any of NumberOfDatabases /
+        # MaximumSiteCount / WarningSiteCount to override the computed value. WebAppUrl is
+        # the My Site host web application (must match a WebApplications entry Url).
         MySite                      = @{
           WebAppUrl          = 'https://sharepoint.contoso.com'
           QuotaTemplateName  = 'MySite'

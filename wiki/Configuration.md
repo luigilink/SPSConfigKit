@@ -192,18 +192,21 @@ MySite = @{
 exceeds the Microsoft-supported content-database size:
 
 ```
-MaxDBSizeMB      = MaxDBSizeGB * 1024
-NumberOfDatabases = ceil(UserCount * QuotaMaxMB / MaxDBSizeMB)
-MaximumSiteCount  = floor(MaxDBSizeMB / QuotaMaxMB)   # sites per DB
+MaxDBSizeMB       = MaxDBSizeGB * 1024
+MaximumSiteCount  = floor(MaxDBSizeMB / QuotaMaxMB)   # sites per DB (capped at 10000)
 WarningSiteCount  = floor(MaximumSiteCount * 0.9)
+NumberOfDatabases = max( ceil(UserCount * QuotaMaxMB / MaxDBSizeMB),   # storage-based
+                         ceil(UserCount / MaximumSiteCount) )          # site-capacity-based
 ```
 
 Example: 500 users × 2048 MB ÷ (100 × 1024) MB = **10 databases**, each holding up to 50 personal
-sites. SharePoint load-balances new personal sites across these databases automatically. Set
-`NumberOfDatabases`, `MaximumSiteCount` or `WarningSiteCount` explicitly to override the
-calculation. **Remove the whole `MySite` block to skip My Site provisioning** — nothing is emitted
-then. These dedicated personal-site databases (`DSPS_CONTENT_MySite_01`, `_02`, …) are separate
-from and additional to the My Site **host** content database.
+sites. The site-capacity term matters once `MaximumSiteCount` is floored or capped (e.g. very large
+quotas, or the 10 000-site cap), so the kit takes the larger of the two counts. SharePoint
+load-balances new personal sites across these databases automatically. Set `NumberOfDatabases`,
+`MaximumSiteCount` or `WarningSiteCount` explicitly to override the calculation. **Remove the whole
+`MySite` block to skip My Site provisioning** — nothing is emitted then. These dedicated
+personal-site databases (`DSPS_CONTENT_MySite_01`, `_02`, …) are separate from and additional to
+the My Site **host** content database.
 
 The companion **`scripts/sps/Invoke-MySiteProvisioning.ps1`** script pre-creates the personal
 sites after the service is configured: it enumerates the User Profile Service profiles, skips the

@@ -1184,6 +1184,12 @@ try {
       # overrides them. SharePoint load-balances new personal sites across these databases.
       $mySiteCfg = $ConfigurationData.NonNodeData.SharePoint.Services.MySite
       if ($null -ne $mySiteCfg) {
+        # Resolve the web application hosting the My Site host so the content databases
+        # depend on it (they cannot be attached before the web application exists).
+        $msWebApp = $ConfigurationData.NonNodeData.SharePoint.WebApplications | Where-Object { $_.Url -eq $mySiteCfg.WebAppUrl } | Select-Object -First 1
+        if ($null -eq $msWebApp) {
+          throw ("NonNodeData.SharePoint.Services.MySite.WebAppUrl ({0}) does not match any declared WebApplications Url." -f $mySiteCfg.WebAppUrl)
+        }
         $msQuotaMaxMB = [uint32]$mySiteCfg.QuotaMaxMB
         $msQuotaWarnMB = if ($null -ne $mySiteCfg.QuotaWarningMB) { [uint32]$mySiteCfg.QuotaWarningMB } else { [uint32][math]::Floor($msQuotaMaxMB * 0.9) }
         $msMaxDBSizeMB = [uint32]$mySiteCfg.MaxDBSizeGB * 1024
@@ -1200,8 +1206,11 @@ try {
           $msMaxSiteCount = 10000
         }
         $msWarnSiteCount = if ($null -ne $mySiteCfg.WarningSiteCount) { [uint32]$mySiteCfg.WarningSiteCount } else { [uint32][math]::Floor($msMaxSiteCount * 0.9) }
-        # Number of databases: enough to hold UserCount personal sites at QuotaMaxMB each.
-        $msNumDBs = if ($null -ne $mySiteCfg.NumberOfDatabases) { [int]$mySiteCfg.NumberOfDatabases } else { [int][math]::Ceiling(([double]$mySiteCfg.UserCount * $msQuotaMaxMB) / $msMaxDBSizeMB) }
+        # Number of databases: enough to hold UserCount personal sites, by storage AND by the
+        # per-DB site capacity (the latter matters once MaximumSiteCount is floored/capped).
+        $msStorageDBs = [int][math]::Ceiling(([double]$mySiteCfg.UserCount * $msQuotaMaxMB) / $msMaxDBSizeMB)
+        $msCapacityDBs = [int][math]::Ceiling([double]$mySiteCfg.UserCount / $msMaxSiteCount)
+        $msNumDBs = if ($null -ne $mySiteCfg.NumberOfDatabases) { [int]$mySiteCfg.NumberOfDatabases } else { [math]::Max($msStorageDBs, $msCapacityDBs) }
         if ($msNumDBs -lt 1) { $msNumDBs = 1 }
 
         SPQuotaTemplate APPLICATION_SpsMySiteQuotaTemplate {
@@ -1215,7 +1224,7 @@ try {
         foreach ($msIndex in 1..$msNumDBs) {
           $msDbName = '{0}{1:D2}' -f $mySiteCfg.DatabaseNamePrefix, $msIndex
           SPContentDatabase "APPLICATION_SpsMySiteContentDB_$msIndex" {
-            DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm', '[SqlAlias]MIDDLEWARE_SqlAlias_CONTENT'
+            DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm', '[SqlAlias]MIDDLEWARE_SqlAlias_CONTENT', "[SPWebApplication]APPLICATION_SpsWebApplication_$($msWebApp.Name)"
             PsDscRunAsCredential = $SETUP
             Name                 = $msDbName
             DatabaseServer       = $sqlAliasWEB.ServerAlias

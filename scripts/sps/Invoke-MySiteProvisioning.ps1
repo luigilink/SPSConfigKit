@@ -125,11 +125,15 @@ foreach ($userProfile in $profileManager) {
         continue
     }
 
+    # SPSite objects returned by UserProfile.PersonalSite are disposable; capture once and
+    # release in finally so a bulk run does not leak SharePoint request resources.
+    $personalSite = $null
     try {
-        if ($null -ne $userProfile.PersonalSite) {
+        $personalSite = $userProfile.PersonalSite
+        if ($null -ne $personalSite) {
             # Already has a personal site; just ensure the quota is applied.
             if ($PSCmdlet.ShouldProcess($accountName, 'Apply quota template to existing My Site')) {
-                Set-SPSite -Identity $userProfile.PersonalSite.Url -QuotaTemplate $quotaTemplateName -ErrorAction Stop
+                Set-SPSite -Identity $personalSite.Url -QuotaTemplate $quotaTemplateName -ErrorAction Stop
             }
             $skipped++
             continue
@@ -137,9 +141,17 @@ foreach ($userProfile in $profileManager) {
 
         if ($PSCmdlet.ShouldProcess($accountName, 'Create My Site and apply quota template')) {
             $userProfile.CreatePersonalSite()
-            if ($null -ne $userProfile.PersonalSite) {
-                Set-SPSite -Identity $userProfile.PersonalSite.Url -QuotaTemplate $quotaTemplateName -ErrorAction SilentlyContinue
+            # CreatePersonalSite() does not guarantee the site is immediately available
+            # (a timer job may finish it), so re-query until it appears before applying the quota.
+            for ($attempt = 0; $attempt -lt 12 -and $null -eq $personalSite; $attempt++) {
+                Start-Sleep -Seconds 5
+                $personalSite = $userProfile.PersonalSite
             }
+            if ($null -eq $personalSite) {
+                throw 'personal site was not available after CreatePersonalSite().'
+            }
+            # Fail loudly if the quota cannot be applied — count only a fully provisioned site.
+            Set-SPSite -Identity $personalSite.Url -QuotaTemplate $quotaTemplateName -ErrorAction Stop
             $created++
             Write-Host ("  Created My Site for {0}" -f $accountName)
         }
@@ -147,6 +159,9 @@ foreach ($userProfile in $profileManager) {
     catch {
         $failed++
         Write-Warning ("  Failed to provision My Site for {0}: {1}" -f $accountName, $_.Exception.Message)
+    }
+    finally {
+        if ($null -ne $personalSite) { $personalSite.Dispose() }
     }
 }
 

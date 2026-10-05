@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Once users are imported (#84/#86), `CfgAppSps` can provision the My Site infrastructure from an
     optional `Services.MySite` block in the `.psd1`. It emits an `SPQuotaTemplate` for personal
     sites and a set of dedicated `SPContentDatabase` resources sized from the expected user base:
-    `NumberOfDatabases = ceil(UserCount * QuotaMaxMB / (MaxDBSizeGB * 1024))`, with
+    `NumberOfDatabases = max( ceil(UserCount * QuotaMaxMB / MaxDBSizeMB), ceil(UserCount /
+    MaximumSiteCount) )`, with
     `MaximumSiteCount`/`WarningSiteCount` per database derived from the quota so no database exceeds
     the Microsoft-supported content-database size. `UserCount`, `QuotaMaxMB`, `QuotaWarningMB` and
     `MaxDBSizeGB` drive the auto-calculation; `NumberOfDatabases`, `MaximumSiteCount` and

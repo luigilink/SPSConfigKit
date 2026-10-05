@@ -120,7 +120,12 @@ $created = 0
 $skipped = 0
 $failed = 0
 
-foreach ($userProfile in $profileManager) {
+# UserProfileManager implements IEnumerable explicitly, so `foreach ($p in $profileManager)`
+# does NOT unroll it — PowerShell would iterate once with the manager itself. Drive the
+# enumerator directly (MoveNext/Current) so every profile is visited.
+$profileEnumerator = $profileManager.GetEnumerator()
+while ($profileEnumerator.MoveNext()) {
+    $userProfile = $profileEnumerator.Current
     $accountName = [string]$userProfile.AccountName          # DOMAIN\sAMAccountName
 
     # Some entries enumerated from the UserProfileManager have no AccountName

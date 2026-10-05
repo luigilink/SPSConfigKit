@@ -303,8 +303,13 @@ try {
       }
       #Reboot the server after creating the Active Directory Domain Services
       PendingReboot RebootOnSignalFromCreateADForest {
-        Name      = 'RebootOnSignalFromCreateADForest'
-        DependsOn = '[ADDomain]SYSTEM_ADS_CreateADForest'
+        Name                  = 'RebootOnSignalFromCreateADForest'
+        # Only react to the post-promotion reboot (Component-Based Servicing),
+        # not to unrelated PendingFileRenameOperations churn (e.g. EdgeUpdate
+        # cleaning old version folders), which would otherwise flag a pending
+        # reboot on every consistency check (#88).
+        SkipPendingFileRename = $true
+        DependsOn             = '[ADDomain]SYSTEM_ADS_CreateADForest'
       }
       #Wait for the Domain Controller to be ready
       # Runs on the DC itself right after promotion, as SYSTEM (already a domain

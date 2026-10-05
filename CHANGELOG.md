@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `IsADSServer` block, so it runs only on the lab domain controller. Real farms rely on the
     customer-provided sync account instead; this is a lab convenience.
 
+### Fixed
+
+- PDC no longer reports a pending reboot on every run because of unrelated file renames (#88)
+  - The `RebootOnSignalFromCreateADForest` `PendingReboot` resource reacts to any reboot source,
+    so `PendingFileRenameOperations` queued by Microsoft EdgeUpdate (cleaning up an old updater
+    version folder on next boot) flagged a pending reboot on every consistency check, even though
+    it is unrelated to the AD DS promotion the resource is meant to handle. `SkipPendingFileRename`
+    is now set so only the genuine post-promotion reboot (surfaced via Component-Based Servicing)
+    triggers the resource.
+
 ## [1.8.0] - 2026-09-30
 
 ### Added

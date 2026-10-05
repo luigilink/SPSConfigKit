@@ -1193,7 +1193,9 @@ try {
         if ($null -eq $msWebApp) {
           throw ("NonNodeData.SharePoint.Services.MySite.WebAppUrl ({0}) does not match any declared WebApplications Url." -f $mySiteCfg.WebAppUrl)
         }
-        if ($mySiteHostLocation -notlike ("{0}*" -f $mySiteCfg.WebAppUrl.TrimEnd('/'))) {
+        $msWaUrl = $mySiteCfg.WebAppUrl.TrimEnd('/')
+        $msHostUrl = "$mySiteHostLocation".TrimEnd('/')
+        if ($msHostUrl -ne $msWaUrl -and $msHostUrl -notlike ("{0}/*" -f $msWaUrl)) {
           throw ("NonNodeData.SharePoint.Services.MySite.WebAppUrl ({0}) is not the web application that hosts the My Site host location ({1})." -f $mySiteCfg.WebAppUrl, $mySiteHostLocation)
         }
         $msQuotaMaxMB = [uint32]$mySiteCfg.QuotaMaxMB
@@ -1225,8 +1227,16 @@ try {
         # per-DB site capacity (the latter matters once MaximumSiteCount is floored/capped).
         $msStorageDBs = [int][math]::Ceiling(([double]$mySiteCfg.UserCount * $msQuotaMaxMB) / $msMaxDBSizeMB)
         $msCapacityDBs = [int][math]::Ceiling([double]$mySiteCfg.UserCount / $msMaxSiteCount)
-        $msNumDBs = if ($null -ne $mySiteCfg.NumberOfDatabases) { [int]$mySiteCfg.NumberOfDatabases } else { [math]::Max($msStorageDBs, $msCapacityDBs) }
-        if ($msNumDBs -lt 1) { $msNumDBs = 1 }
+        $msNumDBs = if ($null -ne $mySiteCfg.NumberOfDatabases) {
+          $msNumDBsOverride = [int]$mySiteCfg.NumberOfDatabases
+          if ($msNumDBsOverride -lt 1) {
+            throw ("NonNodeData.SharePoint.Services.MySite.NumberOfDatabases ({0}) must be a positive value." -f $mySiteCfg.NumberOfDatabases)
+          }
+          $msNumDBsOverride
+        }
+        else {
+          [math]::Max([math]::Max($msStorageDBs, $msCapacityDBs), 1)
+        }
 
         SPQuotaTemplate APPLICATION_SpsMySiteQuotaTemplate {
           DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'

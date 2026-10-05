@@ -94,8 +94,16 @@ if ($null -eq $mySiteCfg) { throw 'NonNodeData.SharePoint.Services.MySite is not
 $mySiteHostLocation = $configurationData.NonNodeData.SharePoint.Services.UserProfile.MySiteHostLocation
 $quotaTemplateName = $mySiteCfg.QuotaTemplateName
 
-# Load the SharePoint module (SharePoint Subscription Edition uses a module, not a snap-in).
-Import-Module Microsoft.SharePoint.PowerShell -DisableNameChecking -ErrorAction Stop
+# Load the SharePoint cmdlets. SharePoint registers the Microsoft.SharePoint.PowerShell PSSnapin
+# (Windows PowerShell 5.1) rather than a module on $env:PSModulePath, so Add-PSSnapin is the
+# reliable entry point — the same thing the SharePoint Management Shell does. Snap-ins are not
+# available in PowerShell 7+, so this script must run in Windows PowerShell.
+if ($PSVersionTable.PSEdition -eq 'Core') {
+    throw 'Run this script in Windows PowerShell 5.1 (the SharePoint Management Shell), not PowerShell 7+: the Microsoft.SharePoint.PowerShell snap-in is not available in PowerShell Core.'
+}
+if (-not (Get-PSSnapin -Name 'Microsoft.SharePoint.PowerShell' -ErrorAction SilentlyContinue)) {
+    Add-PSSnapin -Name 'Microsoft.SharePoint.PowerShell' -ErrorAction Stop
+}
 
 # Build the set of service-account sAMAccountNames to exclude (real users keep a My Site).
 $excludedSam = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)

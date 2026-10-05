@@ -23,10 +23,10 @@
   Provisions My Sites (personal sites) for imported user profiles.
 
 .DESCRIPTION
-  Run ONCE on a SharePoint server (as a farm administrator) after the User
-  Profile AD Import has populated the profile store. Creating personal sites is
-  a one-shot operation, not a desired state, so it lives in this script rather
-  than a DSC resource.
+  Run ONCE from the SharePoint Management Shell on a SharePoint server (as a farm
+  administrator) after the User Profile AD Import has populated the profile store.
+  Creating personal sites is a one-shot operation, not a desired state, so it lives
+  in this script rather than a DSC resource.
 
   The script:
     * reads the ConfigurationData (CfgAppSps.psd1) and Secrets (Secrets.psd1),
@@ -94,15 +94,11 @@ if ($null -eq $mySiteCfg) { throw 'NonNodeData.SharePoint.Services.MySite is not
 $mySiteHostLocation = $configurationData.NonNodeData.SharePoint.Services.UserProfile.MySiteHostLocation
 $quotaTemplateName = $mySiteCfg.QuotaTemplateName
 
-# Load the SharePoint cmdlets. SharePoint registers the Microsoft.SharePoint.PowerShell PSSnapin
-# (Windows PowerShell 5.1) rather than a module on $env:PSModulePath, so Add-PSSnapin is the
-# reliable entry point — the same thing the SharePoint Management Shell does. Snap-ins are not
-# available in PowerShell 7+, so this script must run in Windows PowerShell.
-if ($PSVersionTable.PSEdition -eq 'Core') {
-    throw 'Run this script in Windows PowerShell 5.1 (the SharePoint Management Shell), not PowerShell 7+: the Microsoft.SharePoint.PowerShell snap-in is not available in PowerShell Core.'
-}
-if (-not (Get-PSSnapin -Name 'Microsoft.SharePoint.PowerShell' -ErrorAction SilentlyContinue)) {
-    Add-PSSnapin -Name 'Microsoft.SharePoint.PowerShell' -ErrorAction Stop
+# SharePoint Subscription Edition exposes its cmdlets through the SharePoint Management Shell, not
+# through a loadable module or PSSnapin (Import-Module / Add-PSSnapin both fail). Run this script
+# from the SharePoint Management Shell on a farm server; here we only verify the cmdlets are present.
+if (-not (Get-Command -Name 'Get-SPSite' -ErrorAction SilentlyContinue)) {
+    throw 'SharePoint cmdlets are not available. Run this script from the SharePoint Management Shell on a SharePoint farm server.'
 }
 
 # Build the set of service-account sAMAccountNames to exclude (real users keep a My Site).

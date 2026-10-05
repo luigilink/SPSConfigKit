@@ -211,8 +211,9 @@ the My Site **host** content database.
 The companion **`scripts/sps/Invoke-MySiteProvisioning.ps1`** script pre-creates the personal
 sites after the service is configured: it enumerates the User Profile Service profiles, skips the
 service accounts listed in `Secrets.psd1`, calls `CreatePersonalSite()` for each remaining user,
-and applies the quota template. Run it with `-WhatIf` first to preview the sites that would be
-created.
+and applies the quota template. Run it **from the SharePoint Management Shell** (which exposes the
+SharePoint cmdlets — on Subscription Edition they are not loadable via `Import-Module` or
+`Add-PSSnapin`), with `-WhatIf` first to preview the sites that would be created.
 
 > [!NOTE]
 > Microsoft-supported limits used by the sizing model: 200 GB per content database and up to 10 000

@@ -23,10 +23,16 @@
   Provisions My Sites (personal sites) for imported user profiles.
 
 .DESCRIPTION
-  Run ONCE from the SharePoint Management Shell on a SharePoint server (as a farm
-  administrator) after the User Profile AD Import has populated the profile store.
-  Creating personal sites is a one-shot operation, not a desired state, so it lives
-  in this script rather than a DSC resource.
+  Run ONCE from the SharePoint Management Shell on a SharePoint server after the
+  User Profile AD Import has populated the profile store. Creating personal sites
+  is a one-shot operation, not a desired state, so it lives in this script rather
+  than a DSC resource.
+
+  Run it as an account that is a User Profile Service Application administrator
+  with the "Manage Profiles" permission — for example the farm setup account,
+  which CfgAppSps already grants Full Control on the User Profile Service
+  Application (Administrators and SharingPermissions). Running as an account
+  without that permission fails with an access-denied error.
 
   The script:
     * reads the ConfigurationData (CfgAppSps.psd1) and Secrets (Secrets.psd1),
@@ -114,7 +120,15 @@ Write-Host "Excluded accts  : $($excludedSam.Count) service account(s)"
 
 $site = Get-SPSite -Identity $mySiteHostLocation -ErrorAction Stop
 $context = Get-SPServiceContext -Site $site
-$profileManager = New-Object -TypeName 'Microsoft.Office.Server.UserProfiles.UserProfileManager' -ArgumentList $context
+# Building the UserProfileManager and enumerating it requires the running account to be a
+# User Profile Service Application administrator with "Manage Profiles"; fail fast with a
+# clear message if it is not, instead of a raw access-denied deep in the loop.
+try {
+    $profileManager = New-Object -TypeName 'Microsoft.Office.Server.UserProfiles.UserProfileManager' -ArgumentList $context
+}
+catch [System.UnauthorizedAccessException] {
+    throw ("Access denied building the UserProfileManager. Run this script as a User Profile Service Application administrator with the 'Manage Profiles' permission (e.g. the farm setup account). Details: {0}" -f $_.Exception.Message)
+}
 
 $created = 0
 $skipped = 0

@@ -213,7 +213,9 @@ sites after the service is configured: it enumerates the User Profile Service pr
 service accounts listed in `Secrets.psd1`, calls `CreatePersonalSite()` for each remaining user,
 and applies the quota template. Run it **from the SharePoint Management Shell** (which exposes the
 SharePoint cmdlets — on Subscription Edition they are not loadable via `Import-Module` or
-`Add-PSSnapin`), with `-WhatIf` first to preview the sites that would be created.
+`Add-PSSnapin`), as an account that is a **User Profile Service Application administrator with the
+"Manage Profiles" permission** (for example the farm setup account, which `CfgAppSps` already grants
+Full Control on the UPA). Use `-WhatIf` first to preview the sites that would be created.
 
 > [!NOTE]
 > Microsoft-supported limits used by the sizing model: 200 GB per content database and up to 10 000

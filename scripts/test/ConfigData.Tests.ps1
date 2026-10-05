@@ -131,6 +131,8 @@ BeforeDiscovery {
   $webApps = @($cfg.NonNodeData.SharePoint.WebApplications)
   # Optional User Profile AD Import synchronization connection.
   $syncConn = $cfg.NonNodeData.SharePoint.Services.UserProfile.SyncConnection
+  # Optional My Site provisioning block.
+  $mySite = $cfg.NonNodeData.SharePoint.Services.MySite
 }
 
 # ---------------------------------------------------------------------------
@@ -469,6 +471,36 @@ Describe 'SharePoint configuration' -Skip:(-not $hasSps) {
       $sc = $script:ConfigData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection
       $sc.Forest | Should -Not -BeNullOrEmpty
       @($sc.IncludedOUs).Where({ $_ }).Count | Should -BeGreaterThan 0
+    }
+  }
+
+  Context 'My Site provisioning' -Skip:($null -eq $mySite) {
+    It 'declares positive UserCount, QuotaMaxMB and MaxDBSizeGB' {
+      $ms = $script:ConfigData.NonNodeData.SharePoint.Services.MySite
+      [int]$ms.UserCount | Should -BeGreaterThan 0
+      [int]$ms.QuotaMaxMB | Should -BeGreaterThan 0
+      [int]$ms.MaxDBSizeGB | Should -BeGreaterThan 0
+    }
+    It 'fits a single My Site quota inside a content database' {
+      $ms = $script:ConfigData.NonNodeData.SharePoint.Services.MySite
+      ([int]$ms.MaxDBSizeGB * 1024) | Should -BeGreaterOrEqual ([int]$ms.QuotaMaxMB)
+    }
+    It 'QuotaWarningMB does not exceed QuotaMaxMB' {
+      $ms = $script:ConfigData.NonNodeData.SharePoint.Services.MySite
+      if ($null -ne $ms.QuotaWarningMB) {
+        [int]$ms.QuotaMaxMB | Should -BeGreaterOrEqual ([int]$ms.QuotaWarningMB)
+      }
+    }
+    It 'MaximumSiteCount override, when set, is a positive value' {
+      $ms = $script:ConfigData.NonNodeData.SharePoint.Services.MySite
+      if ($null -ne $ms.MaximumSiteCount) {
+        [int]$ms.MaximumSiteCount | Should -BeGreaterThan 0
+      }
+    }
+    It 'WebAppUrl matches a declared web application' {
+      $ms = $script:ConfigData.NonNodeData.SharePoint.Services.MySite
+      $urls = @($script:ConfigData.NonNodeData.SharePoint.WebApplications | ForEach-Object Url)
+      $urls | Should -Contain $ms.WebAppUrl
     }
   }
 

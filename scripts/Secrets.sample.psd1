@@ -93,6 +93,13 @@
       Password    = '******************'
     }
     @{
+      Name        = 'ADSYNC'
+      DisplayName = 'SharePoint AD Import Sync'
+      Description = 'User Profile AD Import synchronization account'
+      Username    = 'CONTOSO\svcspsync'
+      Password    = '******************'
+    }
+    @{
       Name        = 'Passphrase'
       DisplayName = 'SharePoint Passphrase'
       Description = 'SharePoint Passphrase Account'

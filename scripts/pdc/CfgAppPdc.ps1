@@ -422,6 +422,23 @@ try {
             DependsOn            = '[ADOrganizationalUnit]SYSTEM_ADS_CreateServiceAccount_OU'
           }
         }
+        # Grant the User Profile AD Import sync account the "Replicate Directory Changes"
+        # extended right on the domain root, required by SharePoint AD Import (#84).
+        $adSyncAccount = $serviceAccounts | Where-Object -FilterScript { $_.Name -eq 'ADSYNC' } | Select-Object -First 1
+        if ($null -ne $adSyncAccount) {
+          ADObjectPermissionEntry SYSTEM_ADS_GrantADSyncReplicateDirectoryChanges {
+            Path                               = $domainDN
+            IdentityReference                  = $adSyncAccount.Username
+            ActiveDirectoryRights              = @('ExtendedRight')
+            AccessControlType                  = 'Allow'
+            # DS-Replication-Get-Changes extended right
+            ObjectType                         = '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'
+            ActiveDirectorySecurityInheritance = 'None'
+            InheritedObjectType                = '00000000-0000-0000-0000-000000000000'
+            PsDscRunAsCredential               = $ADSETUP
+            DependsOn                          = '[ADUser]SYSTEM_ADS_CreateServiceAccount_ADSYNC'
+          }
+        }
         #Create the Organizational Unit for the user accounts
         ADOrganizationalUnit SYSTEM_ADS_CreateINT_OU {
           Name                            = $intOUActiveDirectoryPath.Split(',')[0].Substring(3)

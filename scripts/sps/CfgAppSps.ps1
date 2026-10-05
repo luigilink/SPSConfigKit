@@ -1196,11 +1196,17 @@ try {
         if ($msQuotaMaxMB -gt $msMaxDBSizeMB) {
           throw ("NonNodeData.SharePoint.Services.MySite.QuotaMaxMB ({0} MB) exceeds MaxDBSizeGB ({1} GB): a single My Site cannot fit in a content database." -f $msQuotaMaxMB, $mySiteCfg.MaxDBSizeGB)
         }
+        if ($msQuotaWarnMB -gt $msQuotaMaxMB) {
+          throw ("NonNodeData.SharePoint.Services.MySite.QuotaWarningMB ({0} MB) exceeds QuotaMaxMB ({1} MB): SPQuotaTemplate rejects a warning above the maximum." -f $msQuotaWarnMB, $msQuotaMaxMB)
+        }
         if ([int]$mySiteCfg.MaxDBSizeGB -gt 200) {
           Write-Warning ("NonNodeData.SharePoint.Services.MySite.MaxDBSizeGB is {0} GB, above the supported general-usage content database size of 200 GB." -f $mySiteCfg.MaxDBSizeGB)
         }
         # Per-DB maximum personal sites (by storage), capped at the supported 10000 limit.
         $msMaxSiteCount = if ($null -ne $mySiteCfg.MaximumSiteCount) { [uint32]$mySiteCfg.MaximumSiteCount } else { [uint32][math]::Floor($msMaxDBSizeMB / $msQuotaMaxMB) }
+        if ($msMaxSiteCount -lt 1) {
+          throw 'NonNodeData.SharePoint.Services.MySite.MaximumSiteCount must be a positive value (a content database must hold at least one personal site).'
+        }
         if ($msMaxSiteCount -gt 10000) {
           Write-Warning ("Computed My Site MaximumSiteCount {0} exceeds the supported 10000 personal sites per content database; capping at 10000." -f $msMaxSiteCount)
           $msMaxSiteCount = 10000

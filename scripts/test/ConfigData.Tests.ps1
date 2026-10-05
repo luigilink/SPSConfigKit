@@ -129,6 +129,8 @@ BeforeDiscovery {
     $managedAccounts = @('FARM', 'IISAPP', 'SEARCH')
   }
   $webApps = @($cfg.NonNodeData.SharePoint.WebApplications)
+  # Optional User Profile AD Import synchronization connection.
+  $syncConn = $cfg.NonNodeData.SharePoint.Services.UserProfile.SyncConnection
 }
 
 # ---------------------------------------------------------------------------
@@ -451,6 +453,22 @@ Describe 'SharePoint configuration' -Skip:(-not $hasSps) {
   Context 'Managed accounts' {
     It '<_> exists in Secrets.psd1' -ForEach $managedAccounts {
       $script:SecretNames | Should -Contain $_
+    }
+  }
+
+  Context 'User Profile sync connection' -Skip:($null -eq $syncConn) {
+    It 'references a SyncAccount that exists in Secrets.psd1' {
+      $script:SecretNames | Should -Contain $script:ConfigData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection.SyncAccount
+    }
+    It 'SyncAccount resolves to a DOMAIN\user username' {
+      $sa = $script:ConfigData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection.SyncAccount
+      $entry = $script:SecretsData.serviceAccounts | Where-Object { $_.Name -eq $sa } | Select-Object -First 1
+      $entry.Username | Should -Match '^[^\\]+\\[^\\]+$'
+    }
+    It 'declares a non-empty Forest and IncludedOUs' {
+      $sc = $script:ConfigData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection
+      $sc.Forest | Should -Not -BeNullOrEmpty
+      @($sc.IncludedOUs).Where({ $_ }).Count | Should -BeGreaterThan 0
     }
   }
 

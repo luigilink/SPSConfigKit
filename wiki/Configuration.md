@@ -141,6 +141,31 @@ Directory Changes** permission on the domain it synchronises with.
   only on the lab domain controller (inside the `IsADSServer` block) and is skipped entirely
   when no `ADSYNC` entry exists.
 
+The import itself is driven by an optional **synchronization connection** declared under
+`NonNodeData.SharePoint.Services.UserProfile.SyncConnection` in `CfgAppSps.psd1`:
+
+```powershell
+SyncConnection = @{
+  Forest      = 'contoso.com'                   # AD forest to import from
+  SyncAccount = 'ADSYNC'                         # Secrets account -> import credential
+  IncludedOUs = @('OU=INT,DC=contoso,DC=com')   # OUs holding the users to import
+}
+```
+
+`CfgAppSps` turns this into a native `SPUserProfileSyncConnection` (an Active Directory
+Import connection) attached to the User Profile Service. `SyncAccount` names the `Secrets.psd1`
+account whose credential is used to read the directory (`ADSYNC` above). **Remove the whole
+`SyncConnection` block to skip the connection** — nothing is provisioned then. No
+`SPUserProfileSyncService` is used: that belongs to the legacy FIM/MIM synchronization, whereas
+this kit runs User Profiles in AD Import mode (`NoILMUsed = $true`).
+
+> [!NOTE]
+> The kit targets **SharePoint Subscription Edition**. On SPSE the `SPUserProfileSyncConnection`
+> resource forces the connection name to the forest with dots replaced by dashes (e.g.
+> `contoso-com`) and does not reconcile an excluded-OUs list, so the kit does not expose a `Name`
+> or `ExcludedOUs` setting — the connection is named from the forest automatically, and the import
+> scope is defined by `IncludedOUs`.
+
 ### How the loader uses `IsAdAccount`
 
 - `IsAdAccount -ne $false` is the filter that selects AD accounts. Because

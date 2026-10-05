@@ -1151,6 +1151,33 @@ try {
         Ensure               = 'Present'
         NoILMUsed            = $true
       }
+      # User Profile AD Import synchronization connection (optional; #86). Emitted
+      # only when a SyncConnection block is declared. ConnectionCredentials resolves
+      # the Secrets account named by SyncAccount (same pattern as cert passwords).
+      # The kit targets SharePoint Subscription Edition only: SPUserProfileSyncConnection
+      # forces the connection name to "<Forest with dots as dashes>" on SPSE and never
+      # reconciles ExcludedOUs there, so Name is derived from Forest (not configurable)
+      # and ExcludedOUs is not exposed — scope the import with IncludedOUs.
+      $uspSyncConn = $ConfigurationData.NonNodeData.SharePoint.Services.UserProfile.SyncConnection
+      if ($null -ne $uspSyncConn) {
+        # SPUserProfileSyncConnection splits the credential UserName on '\' (domain\user),
+        # so a UPN-form or container account compiles but fails at convergence. Fail fast.
+        $uspSyncCred = (Get-Variable -Name $uspSyncConn.SyncAccount -ValueOnly)
+        if ($uspSyncCred.UserName -notmatch '^[^\\]+\\[^\\]+$') {
+          throw ("NonNodeData.SharePoint.Services.UserProfile.SyncConnection.SyncAccount '{0}' resolves to UserName '{1}', which is not in the required DOMAIN\user form expected by SPUserProfileSyncConnection." -f $uspSyncConn.SyncAccount, $uspSyncCred.UserName)
+        }
+        SPUserProfileSyncConnection APPLICATION_SpsSvcAppUserProfileSyncConnection {
+          DependsOn             = '[SPUserProfileServiceApp]APPLICATION_SpsSvcAppUserProfileServiceApp'
+          PsDscRunAsCredential  = $SETUP
+          UserProfileService    = $uspSvcAppName
+          Name                  = ($uspSyncConn.Forest -replace '\.', '-')
+          Forest                = $uspSyncConn.Forest
+          ConnectionCredentials = $uspSyncCred
+          IncludedOUs           = $uspSyncConn.IncludedOUs
+          ConnectionType        = 'ActiveDirectory'
+          Ensure                = 'Present'
+        }
+      }
       #Manage Managed Metadata Service Application Permissions
       $membersToIncludeMMS = @()
       $membersToIncludeMMS += MSFT_SPServiceAppSecurityEntry {

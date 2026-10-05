@@ -184,8 +184,9 @@ while ($profileEnumerator.MoveNext()) {
 
         if ($PSCmdlet.ShouldProcess($accountName, 'Create My Site and apply quota template')) {
             $userProfile.CreatePersonalSite()
-            # CreatePersonalSite() does not guarantee the site is immediately available
-            # (a timer job may finish it), so re-query until it appears before applying the quota.
+            # CreatePersonalSite() is normally synchronous, so check immediately first and only
+            # fall back to a short re-query loop if a timer job hasn't finished the site yet.
+            $personalSite = $userProfile.PersonalSite
             for ($attempt = 0; $attempt -lt 12 -and $null -eq $personalSite; $attempt++) {
                 Start-Sleep -Seconds 5
                 $personalSite = $userProfile.PersonalSite

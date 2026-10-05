@@ -166,6 +166,56 @@ this kit runs User Profiles in AD Import mode (`NoILMUsed = $true`).
 > or `ExcludedOUs` setting — the connection is named from the forest automatically, and the import
 > scope is defined by `IncludedOUs`.
 
+### My Sites (personal sites)
+
+Once users are imported (AD Import above), you can provision the **My Site** infrastructure from
+an optional `NonNodeData.SharePoint.Services.MySite` block in `CfgAppSps.psd1`:
+
+```powershell
+MySite = @{
+  WebAppUrl          = 'https://sharepoint.contoso.com'  # web app hosting the My Site host
+  QuotaTemplateName  = 'MySite'                           # quota template to create/apply
+  DatabaseNamePrefix = 'DSPS_CONTENT_MySite_'             # personal-site content DB prefix
+  UserCount          = 500                                # expected number of personal sites
+  QuotaMaxMB         = 2048                               # per-site storage limit
+  QuotaWarningMB     = 1843                               # per-site warning threshold
+  MaxDBSizeGB        = 100                                # cap per content database
+  # Optional overrides (skip the auto-calculation):
+  # NumberOfDatabases = 10
+  # MaximumSiteCount  = 50
+  # WarningSiteCount  = 45
+}
+```
+
+`CfgAppSps` turns this into an `SPQuotaTemplate` plus a set of dedicated personal-site
+`SPContentDatabase` resources. Their number is sized from the expected user base so no database
+exceeds the Microsoft-supported content-database size:
+
+```
+MaxDBSizeMB      = MaxDBSizeGB * 1024
+NumberOfDatabases = ceil(UserCount * QuotaMaxMB / MaxDBSizeMB)
+MaximumSiteCount  = floor(MaxDBSizeMB / QuotaMaxMB)   # sites per DB
+WarningSiteCount  = floor(MaximumSiteCount * 0.9)
+```
+
+Example: 500 users × 2048 MB ÷ (100 × 1024) MB = **10 databases**, each holding up to 50 personal
+sites. SharePoint load-balances new personal sites across these databases automatically. Set
+`NumberOfDatabases`, `MaximumSiteCount` or `WarningSiteCount` explicitly to override the
+calculation. **Remove the whole `MySite` block to skip My Site provisioning** — nothing is emitted
+then. These dedicated personal-site databases (`DSPS_CONTENT_MySite_01`, `_02`, …) are separate
+from and additional to the My Site **host** content database.
+
+The companion **`scripts/sps/Invoke-MySiteProvisioning.ps1`** script pre-creates the personal
+sites after the service is configured: it enumerates the User Profile Service profiles, skips the
+service accounts listed in `Secrets.psd1`, calls `CreatePersonalSite()` for each remaining user,
+and applies the quota template. Run it with `-WhatIf` first to preview the sites that would be
+created.
+
+> [!NOTE]
+> Microsoft-supported limits used by the sizing model: 200 GB per content database and up to 10 000
+> personal sites per database. The default `MaxDBSizeGB = 100` stays comfortably under the 200 GB
+> limit; the kit warns if you set it higher and caps `MaximumSiteCount` at 10 000.
+
 ### How the loader uses `IsAdAccount`
 
 - `IsAdAccount -ne $false` is the filter that selects AD accounts. Because

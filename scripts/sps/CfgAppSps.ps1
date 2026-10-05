@@ -1178,6 +1178,54 @@ try {
           Ensure                = 'Present'
         }
       }
+      # My Site quota template + dedicated personal-site content databases (optional; #90).
+      # Emitted only when a MySite block is declared. The DB count and per-DB site limits are
+      # computed from the supported SharePoint SE limits (200 GB / content DB) unless the admin
+      # overrides them. SharePoint load-balances new personal sites across these databases.
+      $mySiteCfg = $ConfigurationData.NonNodeData.SharePoint.Services.MySite
+      if ($null -ne $mySiteCfg) {
+        $msQuotaMaxMB = [uint32]$mySiteCfg.QuotaMaxMB
+        $msQuotaWarnMB = if ($null -ne $mySiteCfg.QuotaWarningMB) { [uint32]$mySiteCfg.QuotaWarningMB } else { [uint32][math]::Floor($msQuotaMaxMB * 0.9) }
+        $msMaxDBSizeMB = [uint32]$mySiteCfg.MaxDBSizeGB * 1024
+        if ($msQuotaMaxMB -gt $msMaxDBSizeMB) {
+          throw ("NonNodeData.SharePoint.Services.MySite.QuotaMaxMB ({0} MB) exceeds MaxDBSizeGB ({1} GB): a single My Site cannot fit in a content database." -f $msQuotaMaxMB, $mySiteCfg.MaxDBSizeGB)
+        }
+        if ([int]$mySiteCfg.MaxDBSizeGB -gt 200) {
+          Write-Warning ("NonNodeData.SharePoint.Services.MySite.MaxDBSizeGB is {0} GB, above the supported general-usage content database size of 200 GB." -f $mySiteCfg.MaxDBSizeGB)
+        }
+        # Per-DB maximum personal sites (by storage), capped at the supported 10000 limit.
+        $msMaxSiteCount = if ($null -ne $mySiteCfg.MaximumSiteCount) { [uint32]$mySiteCfg.MaximumSiteCount } else { [uint32][math]::Floor($msMaxDBSizeMB / $msQuotaMaxMB) }
+        if ($msMaxSiteCount -gt 10000) {
+          Write-Warning ("Computed My Site MaximumSiteCount {0} exceeds the supported 10000 personal sites per content database; capping at 10000." -f $msMaxSiteCount)
+          $msMaxSiteCount = 10000
+        }
+        $msWarnSiteCount = if ($null -ne $mySiteCfg.WarningSiteCount) { [uint32]$mySiteCfg.WarningSiteCount } else { [uint32][math]::Floor($msMaxSiteCount * 0.9) }
+        # Number of databases: enough to hold UserCount personal sites at QuotaMaxMB each.
+        $msNumDBs = if ($null -ne $mySiteCfg.NumberOfDatabases) { [int]$mySiteCfg.NumberOfDatabases } else { [int][math]::Ceiling(([double]$mySiteCfg.UserCount * $msQuotaMaxMB) / $msMaxDBSizeMB) }
+        if ($msNumDBs -lt 1) { $msNumDBs = 1 }
+
+        SPQuotaTemplate APPLICATION_SpsMySiteQuotaTemplate {
+          DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm'
+          PsDscRunAsCredential = $SETUP
+          Name                 = $mySiteCfg.QuotaTemplateName
+          StorageMaxInMB       = $msQuotaMaxMB
+          StorageWarningInMB   = $msQuotaWarnMB
+          Ensure               = 'Present'
+        }
+        foreach ($msIndex in 1..$msNumDBs) {
+          $msDbName = '{0}{1:D2}' -f $mySiteCfg.DatabaseNamePrefix, $msIndex
+          SPContentDatabase "APPLICATION_SpsMySiteContentDB_$msIndex" {
+            DependsOn            = '[SPFarm]APPLICATION_SpsCreateSPFarm', '[SqlAlias]MIDDLEWARE_SqlAlias_CONTENT'
+            PsDscRunAsCredential = $SETUP
+            Name                 = $msDbName
+            DatabaseServer       = $sqlAliasWEB.ServerAlias
+            WebAppUrl            = $mySiteCfg.WebAppUrl
+            MaximumSiteCount     = $msMaxSiteCount
+            WarningSiteCount     = $msWarnSiteCount
+            Ensure               = 'Present'
+          }
+        }
+      }
       #Manage Managed Metadata Service Application Permissions
       $membersToIncludeMMS = @()
       $membersToIncludeMMS += MSFT_SPServiceAppSecurityEntry {

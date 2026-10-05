@@ -366,6 +366,25 @@
             IncludedOUs = @('OU=INT,DC=contoso,DC=com')   # OUs holding the users to import
           }
         }
+        # Optional My Site provisioning. Remove the whole MySite block to skip it
+        # (no quota template or personal-site content databases are then created).
+        # The number of content databases is computed from UserCount, QuotaMaxMB and
+        # MaxDBSizeGB: ceil(UserCount * QuotaMaxMB / (MaxDBSizeGB * 1024)). Set any of
+        # NumberOfDatabases / MaximumSiteCount / WarningSiteCount to override the
+        # computed value. WebAppUrl is the My Site host web application.
+        MySite                      = @{
+          WebAppUrl          = 'https://sharepoint.contoso.com'
+          QuotaTemplateName  = 'MySite'
+          DatabaseNamePrefix = 'DSPS_CONTENT_MySite_'
+          UserCount          = 500     # number of users to size the personal-site DBs for
+          QuotaMaxMB         = 2048    # storage quota per My Site (MB)
+          QuotaWarningMB     = 1843    # warning threshold (~90%)
+          MaxDBSizeGB        = 100     # target content-DB size (supported limit is 200)
+          # Optional overrides (uncomment to force; otherwise computed from the above):
+          # NumberOfDatabases = 10
+          # MaximumSiteCount  = 50
+          # WarningSiteCount  = 45
+        }
         ManagedMetadataService      = @{
           Name         = 'SVCManagedMetadataService'
           DatabaseName = 'DSPS_SVC_ManagedMetadataService'

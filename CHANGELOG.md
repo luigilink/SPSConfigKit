@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Provision My Sites (personal sites) and their storage for AD-imported users (#90)
+  - Once users are imported (#84/#86), `CfgAppSps` can provision the My Site infrastructure from an
+    optional `Services.MySite` block in the `.psd1`. It emits an `SPQuotaTemplate` for personal
+    sites and a set of dedicated `SPContentDatabase` resources sized from the expected user base:
+    `NumberOfDatabases = ceil(UserCount * QuotaMaxMB / (MaxDBSizeGB * 1024))`, with
+    `MaximumSiteCount`/`WarningSiteCount` per database derived from the quota so no database exceeds
+    the Microsoft-supported content-database size. `UserCount`, `QuotaMaxMB`, `QuotaWarningMB` and
+    `MaxDBSizeGB` drive the auto-calculation; `NumberOfDatabases`, `MaximumSiteCount` and
+    `WarningSiteCount` can be set explicitly to override it. The whole block is emitted only when
+    `Services.MySite` is present, so farms without My Sites are unaffected. A companion
+    `Invoke-MySiteProvisioning.ps1` script enumerates User Profile Service profiles, skips service
+    accounts, creates each personal site and applies the quota template (supports `-WhatIf`).
+
 - Add the User Profile AD Import synchronization connection (#86)
   - With the sync account in place (#84), `CfgAppSps` now declares a native
     `SPUserProfileSyncConnection` so the User Profile Service actually imports users from Active

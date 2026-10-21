@@ -509,6 +509,24 @@ Describe 'SharePoint configuration' -Skip:(-not $hasSps) {
       $known = @($script:ConfigData.NonNodeData.ADC.certificates | ForEach-Object Name)
       $known | Should -Contain $_.CertName
     }
+
+    # Each site becomes DSC resources named after the site and its content database, so a
+    # duplicate Name / Url / ContentDatabase breaks the compilation.
+    It 'declares unique site Name, Url and ContentDatabase values' {
+      $sites = @($script:ConfigData.NonNodeData.SharePoint.WebApplications | ForEach-Object { $_.Sites })
+      foreach ($key in 'Name', 'Url', 'ContentDatabase') {
+        $dup = @($sites | ForEach-Object { $_.$key } | Group-Object | Where-Object Count -gt 1 | ForEach-Object Name)
+        $dup | Should -BeNullOrEmpty -Because "site $key values must be unique"
+      }
+    }
+
+    It 'gives every site a template and a content database' {
+      $sites = @($script:ConfigData.NonNodeData.SharePoint.WebApplications | ForEach-Object { $_.Sites })
+      foreach ($s in $sites) {
+        $s.Template | Should -Not -BeNullOrEmpty -Because "site $($s.Name) needs a template"
+        $s.ContentDatabase | Should -Not -BeNullOrEmpty -Because "site $($s.Name) needs a content database"
+      }
+    }
   }
 
   Context 'Installation paths (filesystem)' -Skip:$SkipFilesystem {

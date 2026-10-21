@@ -306,6 +306,44 @@
               Language        = 1033
               ContentDatabase = 'DSPS_CONTENT_AppsCatalog'
             }
+            # Sample content sites (each in its own content database) so a freshly built
+            # farm has usable matter to browse/demo. STS#3 = modern team site (no M365
+            # group); SITEPAGEPUBLISHING#0 = communication site. Remove or adjust freely.
+            @{
+              Name            = 'ProjectManagement'
+              Url             = 'https://sharepoint.contoso.com/sites/projectmanagement'
+              Template        = 'STS#3'
+              Language        = 1033
+              ContentDatabase = 'DSPS_CONTENT_ProjectManagement'
+            }
+            @{
+              Name            = 'SalesTeam'
+              Url             = 'https://sharepoint.contoso.com/sites/salesteam'
+              Template        = 'STS#3'
+              Language        = 1033
+              ContentDatabase = 'DSPS_CONTENT_SalesTeam'
+            }
+            @{
+              Name            = 'HumanResources'
+              Url             = 'https://sharepoint.contoso.com/sites/humanresources'
+              Template        = 'SITEPAGEPUBLISHING#0'
+              Language        = 1033
+              ContentDatabase = 'DSPS_CONTENT_HumanResources'
+            }
+            @{
+              Name            = 'ITServices'
+              Url             = 'https://sharepoint.contoso.com/sites/itservices'
+              Template        = 'SITEPAGEPUBLISHING#0'
+              Language        = 1033
+              ContentDatabase = 'DSPS_CONTENT_ITServices'
+            }
+            @{
+              Name            = 'Communications'
+              Url             = 'https://sharepoint.contoso.com/sites/communications'
+              Template        = 'SITEPAGEPUBLISHING#0'
+              Language        = 1033
+              ContentDatabase = 'DSPS_CONTENT_Communications'
+            }
           )
         }
       )

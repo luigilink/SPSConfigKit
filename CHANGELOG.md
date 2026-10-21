@@ -5,6 +5,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Ship sample modern team and communication sites with dedicated content databases (#93)
+  - The sample `CfgAppSps.psd1` now declares five representative content site collections under the
+    `SharePoint` web application in addition to the infrastructure sites, so a freshly built farm has
+    usable matter to browse alongside the personal sites: two modern team sites (`STS#3`)
+    `ProjectManagement` and `SalesTeam`, and three communication sites (`SITEPAGEPUBLISHING#0`)
+    `HumanResources`, `ITServices` and `Communications`. Each site collection gets its own content
+    database (one-to-one, `MaximumSiteCount = 1`), matching the existing kit convention. This is
+    sample ConfigurationData only — the existing `CfgAppSps` loop already provisions an
+    `SPContentDatabase` and `SPSite` per `Sites` entry, so no logic changed. Remove or adjust the
+    entries for your own farm.
+    `ConfigData.Tests.ps1` now also checks that every site has a template and a content database
+    and that site `Name`, `Url` and `ContentDatabase` values are unique, since a duplicate would break
+    the DSC compilation.
+
 ## [1.9.0] - 2026-10-05
 
 ### Added

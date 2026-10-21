@@ -106,6 +106,7 @@ relevant to your deployment.
 | `PULLSETUP`, `IISPULLAPP`, `DscPullCert`                                                         | PULL server (`CfgAppPull`) | **Yes** — only when a node declares `IsPullServer` |
 | `SETUP`, `FARM`, `IISAPP`, `SEARCH`, `CONTENT`, `SUPERUSER`, `SUPEREADER`, `Passphrase`, `SharePointCert`, `OfficeOnlineCert` | SharePoint (`CfgAppSps`) | No — core farm accounts          |
 | `ADSYNC`                                                                                        | User Profile AD Import (`CfgAppSps`; lab grant in `CfgAppPdc`) | **Yes** — only when User Profile AD Import is used |
+| `SWM`                                                                                           | SharePoint Workflow Manager (SWM server) | **Yes** — only when an SWM server is deployed |
 
 - The **AD / PDC** brick provisions an Active Directory domain controller. It is
   meant for labs and demos; in production the domain already exists, so these

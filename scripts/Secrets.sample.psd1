@@ -100,6 +100,13 @@
       Password    = '******************'
     }
     @{
+      Name        = 'SWM'
+      DisplayName = 'SharePoint Workflow Manager'
+      Description = 'SharePoint Workflow Manager service account'
+      Username    = 'CONTOSO\svcswm'
+      Password    = '******************'
+    }
+    @{
       Name        = 'Passphrase'
       DisplayName = 'SharePoint Passphrase'
       Description = 'SharePoint Passphrase Account'

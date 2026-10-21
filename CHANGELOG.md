@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add the `SWM` (SharePoint Workflow Manager) service account to the sample Secrets (#95)
+  - `Secrets.sample.psd1` gains an `SWM` service account (`CONTOSO\svcswm`), created by the existing
+    `ADUser` loop in `CfgAppPdc` on the lab domain controller. It is the account the SharePoint
+    Workflow Manager farm will run as, and is optional: it is only needed when an SWM server is
+    deployed. The account is introduced on its own — the SWM server installation, the farm creation
+    and the SharePoint registration are follow-up work. The name is `SWM` (SharePoint Workflow
+    Manager), not `WFM`: the legacy Microsoft Workflow Manager is no longer installable and its
+    support ended on 14 July 2026.
+
 - Ship sample modern team and communication sites with dedicated content databases (#93)
   - The sample `CfgAppSps.psd1` now declares five representative content site collections under the
     `SharePoint` web application in addition to the infrastructure sites, so a freshly built farm has

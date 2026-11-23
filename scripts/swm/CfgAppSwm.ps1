@@ -26,10 +26,11 @@
   compiles MOF files for every node defined in AllNodes. The script is idempotent: re-running it
   simply regenerates the MOFs in the output directory and refreshes the checksums.
 
-  This is the skeleton of the configuration: the Local Configuration Manager, the common
-  hardening shared by every node of the kit, and the local administrators of the SWM server.
-  The installation of IIS, Service Fabric and SharePoint Workflow Manager, the endpoint
-  certificate and the farm creation are added step by step.
+  The configuration is built step by step. It currently covers the Local Configuration Manager,
+  the common hardening shared by every node of the kit, the local administrators of the SWM
+  server, the IIS prerequisites (and IIS logging), the copy of the installers from the share and
+  the firewall rule of the Workflow Management endpoint. The installation of Service Fabric and
+  SharePoint Workflow Manager, the endpoint certificate and the farm creation are added next.
 
   The role is SharePoint Workflow Manager (SWM), not the legacy Microsoft Workflow Manager,
   which is no longer installable (support ended on 14 July 2026).
@@ -173,7 +174,14 @@ try {
     # NOTE: Module versions below MUST stay in sync with
     #       scripts/init/Initialize-DscNode.psd1 (Modules table).
     #Import the required DSC resources
+    Import-DscResource -ModuleName NetworkingDsc -ModuleVersion 9.1.0
     Import-DscResource -ModuleName PSDscResources -ModuleVersion 2.12.0.0
+    Import-DscResource -ModuleName WebAdministrationDsc -ModuleVersion 4.2.1
+
+    # HTTPS port of the Workflow Management endpoint. 12290 is the default documented by
+    # Microsoft Learn; override it with NonNodeData.SWM.HttpsPort (the same value must be used
+    # when the farm is created).
+    $swmHttpsPort = if ($ConfigurationData.NonNodeData.SWM.HttpsPort) { [int]$ConfigurationData.NonNodeData.SWM.HttpsPort } else { 12290 }
 
     #For All servers
     Node $AllNodes.Nodename {
@@ -229,6 +237,93 @@ try {
         MembersToInclude     = $Node.LocalAdmins
         Credential           = $ADSETUP
         PsDscRunAsCredential = $ADSETUP
+      }
+
+      # IIS prerequisites documented for SharePoint Workflow Manager (Web Server, Windows
+      # Authentication, .NET Extensibility 4.7, ASP.NET 4.7), plus the IIS management tools
+      # to bind the endpoint certificate in IIS Manager.
+      $requiredFeatures = @(
+        'Web-Server', 'Web-Windows-Auth', 'Web-Net-Ext45', 'Web-Asp-Net45',
+        'Web-Mgmt-Tools', 'Web-Mgmt-Console'
+      )
+      foreach ($feature in $requiredFeatures) {
+        WindowsFeature "WindowsFeature-$feature" {
+          Ensure = 'Present'
+          Name   = $feature
+        }
+      }
+      $prereqDependencies = $requiredFeatures | ForEach-Object -Process {
+        return "[WindowsFeature]WindowsFeature-$_"
+      }
+
+      # Remove the Default Web Site (it holds port 443). The default application pools are kept:
+      # nothing documents whether SharePoint Workflow Manager relies on them.
+      WebSite MIDDLEWARE_RemoveDefaultWebSite {
+        DependsOn    = $prereqDependencies
+        Ensure       = 'Absent'
+        Name         = 'Default Web Site'
+        PhysicalPath = 'C:\inetpub\wwwroot'
+      }
+
+      #Configure IIS logging
+      File MIDDLEWARE_IIS-LogFolder {
+        DependsOn       = $prereqDependencies
+        Ensure          = 'Present'
+        Type            = 'Directory'
+        DestinationPath = "$($ConfigurationData.NonNodeData.Drives.Logs)\$($ConfigurationData.NonNodeData.IIS.LogFolder)"
+      }
+      IisLogging MIDDLEWARE_IIS-ConfigureLogFolder {
+        DependsOn = '[File]MIDDLEWARE_IIS-LogFolder'
+        LogPath   = "$($ConfigurationData.NonNodeData.Drives.Logs)\$($ConfigurationData.NonNodeData.IIS.LogFolder)"
+      }
+
+      #Configure IIS HTTPERR
+      File MIDDLEWARE_IIS-LogFolderHTTPERR {
+        DependsOn       = $prereqDependencies
+        Ensure          = 'Present'
+        Type            = 'Directory'
+        DestinationPath = "$($ConfigurationData.NonNodeData.Drives.Logs)\$($ConfigurationData.NonNodeData.IIS.httpErrFolder)"
+      }
+      Registry MIDDLEWARE_IIS-RegLogFolderHTTPERR {
+        DependsOn = '[File]MIDDLEWARE_IIS-LogFolderHTTPERR'
+        Key       = 'HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\HTTP\Parameters'
+        ValueName = 'ErrorLoggingDir'
+        ValueType = 'String'
+        ValueData = "$($ConfigurationData.NonNodeData.Drives.Logs)\$($ConfigurationData.NonNodeData.IIS.httpErrFolder)"
+        Ensure    = 'Present'
+      }
+
+      # Get the SWM installation files: <SourcePath>\SWM -> <Drives.Data>\SoftwarePackages\SWM
+      File MIDDLEWARE_SWMGetSources {
+        SourcePath      = (Join-Path $ConfigurationData.NonNodeData.SourcePath 'SWM')
+        DestinationPath = (Join-Path (Join-Path $ConfigurationData.NonNodeData.Drives.Data 'SoftwarePackages') 'SWM')
+        Ensure          = 'Present'
+        Recurse         = $true
+        Credential      = $SETUP
+        MatchSource     = $true
+        DependsOn       = '[Group]MIDDLEWARE_AddSWMAccountsToAdminGroup'
+      }
+      Log MIDDLEWARE_SWMGetSources_Completed {
+        #The message below gets written to the Microsoft-Windows-Desired State Configuration/Analytic log
+        Message   = 'Finished running the file resource with ID MIDDLEWARE_SWMGetSources'
+        DependsOn = '[File]MIDDLEWARE_SWMGetSources'
+      }
+
+      # Inbound rule for the Workflow Management endpoint (HTTPS 12290 by default). It is the only
+      # port Microsoft Learn documents for SharePoint Workflow Manager; the other ports (Service
+      # Bus, Service Fabric) are added once they are verified on a configured server.
+      Firewall MIDDLEWARE_SWMHttpsFirewallRule {
+        Name        = 'SWM-Workflow-HTTPS-TCP-In'
+        DisplayName = 'SharePoint Workflow Manager (HTTPS TCP-In)'
+        Description = 'Inbound rule for SharePoint servers to reach the Workflow Management endpoint over HTTPS.'
+        Group       = 'SharePoint Workflow Manager'
+        Direction   = 'Inbound'
+        Protocol    = 'TCP'
+        LocalPort   = "$swmHttpsPort"
+        Profile     = 'Domain'
+        Enabled     = 'True'
+        Action      = 'Allow'
+        Ensure      = 'Present'
       }
     }
   }

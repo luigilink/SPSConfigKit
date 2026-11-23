@@ -46,15 +46,30 @@ scripts/
 engine used by SharePoint 2013 workflows. The name is **SWM**, not WFM: the legacy Microsoft
 Workflow Manager is no longer installable and its support ended on 14 July 2026.
 
-It is built step by step and is **not complete**. For now it only provides the skeleton, selected
-by the `IsSWMServer` role flag on a node:
+It is built step by step and is **not complete**. For now it provides, for a node carrying the
+`IsSWMServer` role flag:
 
 - the Local Configuration Manager block and the hardening shared by every node of the kit
   (services, firewall rules);
 - a `Group` adding the node's `LocalAdmins` (the setup account and the `SWM` service account)
-  to the local Administrators.
+  to the local Administrators;
+- the **IIS prerequisites** documented for SharePoint Workflow Manager (`Web-Server`,
+  `Web-Windows-Auth`, `Web-Net-Ext45`, `Web-Asp-Net45`) and the IIS management tools
+  (`Web-Mgmt-Tools`, `Web-Mgmt-Console`, handy to bind the endpoint certificate in IIS Manager),
+  the removal of the **Default Web Site** (it holds port 443; the default application pools are
+  kept) and the IIS / HTTPERR logs moved under `Drives.Logs` (`NonNodeData.IIS`);
+- the copy of the installers from `<NonNodeData.SourcePath>\SWM` to
+  `<Drives.Data>\SoftwarePackages\SWM` (no SWM-specific path setting);
+- an inbound **firewall rule** for the Workflow Management endpoint, on the port set by
+  `NonNodeData.SWM.HttpsPort` (default **12290**, the HTTPS port documented by Microsoft Learn).
 
-The installation of IIS, Service Fabric and SharePoint Workflow Manager, the endpoint
+> [!NOTE]
+> Microsoft Learn documents only ports 12290 (HTTPS) and 12291 (HTTP, opt-in) for SharePoint
+> Workflow Manager. It does not say whether the installer creates firewall rules, nor which ports
+> Service Bus and Service Fabric use. Those are **not** opened from memory: they will be added once
+> checked on a configured server (rules before / after the installation).
+
+The installation of Service Fabric and SharePoint Workflow Manager, the endpoint
 certificate, the farm creation and the SharePoint registration are **not implemented yet**.
 During development it is applied in push mode (`Start-DscConfiguration -Wait -Verbose`), and
 switching it to pull mode is planned for the end.
@@ -317,6 +332,9 @@ port 12290. For that, `CfgAppPdc.psd1` carries:
 > to stay dedicated. The certificate requirements (Server Authentication usage, RSA 2048 or more,
 > exportable CSP-based key, certificate in `LocalMachine\My`, SAN covering the alias and the
 > host FQDN) come from a single unverified third-party source and are also to be confirmed.
+
+The endpoint port is the `NonNodeData.SWM.HttpsPort` setting of `CfgAppSwm.psd1` (default
+**12290**, the documented value); 443 is to be tested on the SWM server and then set there.
 
 This only issues the certificate and publishes the name. Importing it on the SWM server, creating
 the farm and registering it in SharePoint are not automated yet.

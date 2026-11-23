@@ -37,6 +37,12 @@
       @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 64KB }
       @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 64KB }
     )
+    # SharePoint Workflow Manager settings.
+    SWM         = @{
+      # HTTPS port of the Workflow Management endpoint (opened in the firewall, and used by the farm
+      # creation). 12290 is the default documented by Microsoft Learn.
+      HttpsPort = 12290
+    }
     # IIS log folders, relative to Drives.Logs.
     IIS         = @{
       LogFolder     = 'LOGS\IIS'

@@ -41,7 +41,25 @@
     SWM         = @{
       # HTTPS port of the Workflow Management endpoint (opened in the firewall, and used by the farm
       # creation). 12290 is the default documented by Microsoft Learn.
-      HttpsPort = 12290
+      HttpsPort      = 12290
+      # Installation logs, relative to Drives.Logs.
+      LogFolder      = 'LOGS\SWM'
+      # Installers, relative to <Drives.Data>\SoftwarePackages\SWM\BIN (staged from the share by
+      # Initialize-SoftwarePackages). The MSI ProductId changes with every version: read it with
+      # the Windows Installer API (Property table) when a package is updated.
+      ServiceFabric  = @{
+        FileName       = 'ServiceFabric\MicrosoftServiceFabric.9.1.1583.9590.exe'
+        # Minimum version documented by Microsoft Learn for SharePoint Workflow Manager.
+        MinimumVersion = '9.1.1583.9590'
+      }
+      WorkflowClient = @{
+        FileName  = 'sharepointworkflowmanagerclient_x64.msi'
+        ProductId = '{CE257EBF-44F7-4CDD-8AB5-08DDE86FE024}'
+      }
+      WorkflowServer = @{
+        FileName  = 'sharepointworkflowmanager.msi'
+        ProductId = '{04A7199E-565D-4654-88A3-80A9A7BADDD9}'
+      }
     }
     # IIS log folders, relative to Drives.Logs.
     IIS         = @{

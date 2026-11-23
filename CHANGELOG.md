@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Install Service Fabric, the SharePoint Workflow Manager Client and SharePoint Workflow Manager in `CfgAppSwm` (#106)
+  - `CfgAppSwm` now installs, in the order the installers require, the Azure Service Fabric Runtime
+    (`/accepteula`, 9.1.1583.9590 or higher as documented by Microsoft Learn; guarded `Script`
+    resource, a restart request is passed on to the LCM), the SharePoint Workflow Manager Client (a
+    launch condition of the SPWFM installer) and SharePoint Workflow Manager (`MsiPackage`). The file
+    names, the MSI product codes and the minimum Service Fabric version are declared in
+    `NonNodeData.SWM`, and the installation logs go to the logs drive. Compiled on the lab SWM
+    server; not applied yet.
+
 - Install the IIS prerequisites, stage the installers and open the firewall in `CfgAppSwm` (#104)
   - `CfgAppSwm` now installs the IIS features documented for SharePoint Workflow Manager (Web
     Server, Windows Authentication, .NET Extensibility 4.7, ASP.NET 4.7) plus the IIS management

@@ -60,6 +60,13 @@ It is built step by step and is **not complete**. For now it provides, for a nod
   kept) and the IIS / HTTPERR logs moved under `Drives.Logs` (`NonNodeData.IIS`);
 - the copy of the installers from `<NonNodeData.SourcePath>\SWM` to
   `<Drives.Data>\SoftwarePackages\SWM` (no SWM-specific path setting);
+- the **installation**, in the order the installers require: Azure Service Fabric
+  (`MicrosoftServiceFabric.<version>.exe /accepteula`, version 9.1.1583.9590 or higher as documented by
+  Microsoft Learn), then the **SharePoint Workflow Manager Client** (a launch condition of the SPWFM
+  installer), then **SharePoint Workflow Manager** (which also installs Service Bus 1.1). File names,
+  MSI `ProductId` (it changes with every version, read it in the MSI `Property` table) and the
+  minimum Service Fabric version are in `NonNodeData.SWM`; installation logs go to
+  `<Drives.Logs>\<NonNodeData.SWM.LogFolder>`;
 - an inbound **firewall rule** for the Workflow Management endpoint, on the port set by
   `NonNodeData.SWM.HttpsPort` (default **12290**, the HTTPS port documented by Microsoft Learn).
 
@@ -69,8 +76,8 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 > Service Bus and Service Fabric use. Those are **not** opened from memory: they will be added once
 > checked on a configured server (rules before / after the installation).
 
-The installation of Service Fabric and SharePoint Workflow Manager, the endpoint
-certificate, the farm creation and the SharePoint registration are **not implemented yet**.
+The endpoint certificate import, the farm creation and the SharePoint registration are **not
+implemented yet**.
 During development it is applied in push mode, and switching it to pull mode is planned for the end.
 In push mode, apply the Local Configuration Manager settings **first**, because
 `Start-DscConfiguration` does not apply the `<node>.meta.mof`: without it the LCM has no

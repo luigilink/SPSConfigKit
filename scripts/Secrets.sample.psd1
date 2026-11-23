@@ -139,6 +139,14 @@
       Password    = '******************'
     }
     @{
+      Name        = 'SharePointWorkflowCert'
+      DisplayName = 'SharePoint Workflow PFXCred'
+      Description = 'SharePoint Workflow Manager PFXCred Account'
+      Username    = 'SharePointWorkflowCert'
+      IsAdAccount = $False
+      Password    = '******************'
+    }
+    @{
       Name        = 'OfficeOnlineCert'
       DisplayName = 'Office Online PFXCred'
       Description = 'Office Online PFXCred Account'

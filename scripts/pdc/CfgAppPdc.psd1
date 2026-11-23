@@ -47,9 +47,10 @@
     # (WFE/VIP for the web app, the OOS server for Office Online). Omit or leave
     # empty to publish no records.
     DnsRecords = @(
-      @{ Name = 'sharepoint'      ; IPAddress = '10.1.1.27' }
-      @{ Name = 'sharepoint-admin'; IPAddress = '10.1.1.21' }
-      @{ Name = 'oosweb'          ; IPAddress = '10.1.1.31' }
+      @{ Name = 'sharepoint'         ; IPAddress = '10.1.1.27' }
+      @{ Name = 'sharepoint-admin'   ; IPAddress = '10.1.1.21' }
+      @{ Name = 'sharepoint-workflow'; IPAddress = '10.1.1.41' }
+      @{ Name = 'oosweb'             ; IPAddress = '10.1.1.31' }
     )
     ADC        = @{
       certificates = @(
@@ -76,6 +77,16 @@
           SubjectAlt   = 'dns=sharepoint-admin.contoso.com'
           CerFileName  = 'SharePointAdmin.cer'
           PfxFileName  = 'SharePointAdmin.pfx'
+        }
+        # SharePoint Workflow Manager (SWM) endpoint, served over HTTPS on port 443. The SAN covers
+        # both the service alias and the SWM host FQDN.
+        @{
+          Name         = 'SharePointWorkflowCert'
+          FriendlyName = 'SharePointWorkflow'
+          Subject      = 'sharepoint-workflow.contoso.com'
+          SubjectAlt   = 'dns=sharepoint-workflow.contoso.com&dns=swm1.contoso.com'
+          CerFileName  = 'SharePointWorkflow.cer'
+          PfxFileName  = 'SharePointWorkflow.pfx'
         }
         @{
           Name         = 'OfficeOnlineCert'

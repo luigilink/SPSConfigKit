@@ -106,7 +106,7 @@ relevant to your deployment.
 | `PULLSETUP`, `IISPULLAPP`, `DscPullCert`                                                         | PULL server (`CfgAppPull`) | **Yes** — only when a node declares `IsPullServer` |
 | `SETUP`, `FARM`, `IISAPP`, `SEARCH`, `CONTENT`, `SUPERUSER`, `SUPEREADER`, `Passphrase`, `SharePointCert`, `OfficeOnlineCert` | SharePoint (`CfgAppSps`) | No — core farm accounts          |
 | `ADSYNC`                                                                                        | User Profile AD Import (`CfgAppSps`; lab grant in `CfgAppPdc`) | **Yes** — only when User Profile AD Import is used |
-| `SWM`                                                                                           | SharePoint Workflow Manager (SWM server) | **Yes** — only when an SWM server is deployed |
+| `SWM`, `SharePointWorkflowCert`                                                                  | SharePoint Workflow Manager (SWM server; the certificate is issued by `CfgAppPdc`) | **Yes** — only when an SWM server is deployed |
 
 - The **AD / PDC** brick provisions an Active Directory domain controller. It is
   meant for labs and demos; in production the domain already exists, so these
@@ -262,6 +262,32 @@ CertificatePassword = (Get-Variable -Name $spCertificate.Name -ValueOnly)
 ```
 
 A missing or misnamed Secrets entry fails fast at compile time.
+
+### SharePoint Workflow Manager endpoint certificate (`SharePointWorkflowCert`)
+
+The SharePoint Workflow Manager (SWM) farm is meant to be served over **HTTPS on port 443**
+with a certificate issued by the lab CA, instead of the default self-generated certificate on
+port 12290. For that, `CfgAppPdc.psd1` carries:
+
+- an `ADC.certificates` entry **`SharePointWorkflowCert`** (subject
+  `sharepoint-workflow.contoso.com`, SAN also covering the SWM host `swm1.contoso.com`),
+  requested and exported by the same generic loop as the other certificates (exportable RSA 2048
+  key, legacy `Microsoft RSA SChannel Cryptographic Provider`, `WebServer` template);
+- a `DnsRecords` entry `sharepoint-workflow` pointing to the SWM server (`10.1.1.41`);
+- a matching **`SharePointWorkflowCert`** entry in `Secrets.psd1` (the PFX password).
+
+> [!IMPORTANT]
+> Using **port 443** for SWM is **not confirmed by Microsoft documentation**. The install
+> article documents the wizard's *Custom Settings* option for different ports and custom
+> certificates, and no restriction on the port was found, but the cmdlet reference could not be
+> retrieved, so parameter names and any restriction remain to be confirmed on an SWM server
+> (`Get-Help New-WFFarm -Full`). Port 443 must be free on that server, which is why it is meant
+> to stay dedicated. The certificate requirements (Server Authentication usage, RSA 2048 or more,
+> exportable CSP-based key, certificate in `LocalMachine\My`, SAN covering the alias and the
+> host FQDN) come from a single unverified third-party source and are also to be confirmed.
+
+This only issues the certificate and publishes the name. Importing it on the SWM server, creating
+the farm and registering it in SharePoint are not automated yet.
 
 ## `scripts/sps/CfgAppSps.psd1`
 

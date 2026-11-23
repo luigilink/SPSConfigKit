@@ -347,10 +347,12 @@ try {
         GetScript  = { return @{ Result = 'Azure Service Fabric Runtime' } }
         TestScript = {
           $keys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+          # The LCM runs the script in strict mode, and many Uninstall keys have no DisplayName.
           $installed = Get-ItemProperty -Path $keys -ErrorAction SilentlyContinue |
-            Where-Object { $_.DisplayName -like '*Service Fabric*' -and $_.DisplayVersion }
+            Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.PSObject.Properties['DisplayVersion'] -and $_.DisplayName -like '*Service Fabric*' }
           foreach ($entry in $installed) {
-            if ([System.Version]$entry.DisplayVersion -ge [System.Version]$using:serviceFabricMinVersion) { return $true }
+            $version = $null
+            if ([System.Version]::TryParse([string]$entry.DisplayVersion, [ref]$version) -and $version -ge [System.Version]$using:serviceFabricMinVersion) { return $true }
           }
           return $false
         }

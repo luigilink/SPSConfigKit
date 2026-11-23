@@ -71,8 +71,17 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 
 The installation of Service Fabric and SharePoint Workflow Manager, the endpoint
 certificate, the farm creation and the SharePoint registration are **not implemented yet**.
-During development it is applied in push mode (`Start-DscConfiguration -Wait -Verbose`), and
-switching it to pull mode is planned for the end.
+During development it is applied in push mode, and switching it to pull mode is planned for the end.
+In push mode, apply the Local Configuration Manager settings **first**, because
+`Start-DscConfiguration` does not apply the `<node>.meta.mof`: without it the LCM has no
+`CertificateID` and cannot decrypt the credentials of a MOF compiled with encryption (the
+`Initialize-DscEncryption.ps1` default).
+
+```powershell
+.\CfgAppSwm.ps1
+Set-DscLocalConfigurationManager -Path .\MOF -Verbose
+Start-DscConfiguration -Path .\MOF -Wait -Verbose -Force
+```
 
 The data disks are **not** initialised by this configuration: run
 `scripts\init\Initialize-DscDisks.ps1 -ConfigPath .\swm\CfgAppSwm.psd1`, as for the other nodes.

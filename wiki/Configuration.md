@@ -61,7 +61,9 @@ switching it to pull mode is planned for the end.
 
 The data disks are **not** initialised by this configuration: run
 `scripts\init\Initialize-DscDisks.ps1 -ConfigPath .\swm\CfgAppSwm.psd1`, as for the other nodes.
-`NonNodeData.Disks` still describes the layout and drives the derived `Drives` letters.
+`NonNodeData.Disks` describes the layout and drives the derived `Drives` letters, and
+`NonNodeData.ManageDisks` (default `$true`) is the switch that script reads: set it to `$false` when
+the storage is already prepared, and the script then does nothing.
 
 Like the other `Cfg*.psd1` files, the tracked file keeps `PSDscAllowPlainTextPassword = $True` and
 no certificate thumbprint. Run `Initialize-DscEncryption.ps1` before compiling a MOF you intend to

@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     block and the hardening shared by every node, and, for a node carrying the new `IsSWMServer` role
     flag, a `Group` adding its `LocalAdmins` (the setup account and `svcswm`) to the local
     Administrators. The script fails fast when no node carries `IsSWMServer`. The data disks are
-    left to `Initialize-DscDisks.ps1`, as for the other nodes. This is only the skeleton: the
+    left to `Initialize-DscDisks.ps1`, as for the other nodes (`NonNodeData.ManageDisks` is its switch). This is only the skeleton: the
     IIS / Service Fabric / SharePoint Workflow Manager installation, the endpoint certificate, the
     farm creation and the SharePoint registration are added in later steps, and the configuration
     is applied in push mode while it is developed. Compiled on the lab SWM server; not applied yet.

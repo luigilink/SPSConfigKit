@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Issue a `SharePointWorkflowCert` certificate and publish a DNS name for the SWM endpoint (#99)
+  - The SharePoint Workflow Manager (SWM) farm is meant to be served over HTTPS on port 443 with a
+    certificate from the lab CA rather than the self-generated one on port 12290. `CfgAppPdc.psd1`
+    gains an `ADC.certificates` entry `SharePointWorkflowCert` (subject
+    `sharepoint-workflow.contoso.com`, SAN also covering `swm1.contoso.com`) and a
+    `sharepoint-workflow` DNS record pointing to the SWM server, and `Secrets.sample.psd1` gains the
+    matching `SharePointWorkflowCert` entry (the PFX password). No logic change: the generic loop in
+    `CfgAppPdc` already requests, exports and publishes every certificate of the list. **Port 443 is
+    not confirmed by Microsoft documentation** (no restriction was found, but the SWM cmdlet
+    reference could not be retrieved) and is to be confirmed on an SWM server; the certificate
+    requirements also come from an unverified third-party source. Importing the certificate on the
+    SWM server, creating the farm and registering it in SharePoint are follow-up work. Add a
+    `SharePointWorkflowCert` entry to your own `Secrets.psd1` before running `CfgAppPdc`.
+
 - Stage the SharePoint Workflow Manager (SWM) installers on the SoftwarePackages share (#97)
   - `Initialize-SoftwarePackages.psd1` gains three plain downloads (no change to the script): the
     SharePoint Workflow Manager (`sharepointworkflowmanager.msi`) and its client
@@ -742,7 +756,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     call-out; a new post-compile step runs `Invoke-MofEncryptionTest.ps1` as a gate.
 - `wiki/Usage.md`
   - New "Verify the MOFs are encrypted" gate documented right after compilation.
-
 
 ### Fixed
 

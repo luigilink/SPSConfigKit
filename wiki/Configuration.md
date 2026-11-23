@@ -32,10 +32,42 @@ scripts/
 ├── sps/
 │   ├── CfgAppSps.psd1          ← SharePoint farm ConfigurationData
 │   └── CfgAppSps.ps1
+├── swm/
+│   ├── CfgAppSwm.psd1          ← SharePoint Workflow Manager (SWM) server ConfigurationData
+│   └── CfgAppSwm.ps1
 ├── pdc/                        ← REFERENCE EXAMPLE — not for production
 ├── pull/                       ← REFERENCE EXAMPLE — not for production
 └── sql/                        ← REFERENCE EXAMPLE — not for production
 ```
+
+### `scripts/swm/CfgAppSwm` (work in progress)
+
+`CfgAppSwm` configures the dedicated **SharePoint Workflow Manager (SWM)** server, the workflow
+engine used by SharePoint 2013 workflows. The name is **SWM**, not WFM: the legacy Microsoft
+Workflow Manager is no longer installable and its support ended on 14 July 2026.
+
+It is built step by step and is **not complete**. For now it only provides the skeleton, selected
+by the `IsSWMServer` role flag on a node:
+
+- the Local Configuration Manager block and the hardening shared by every node of the kit
+  (services, firewall rules);
+- a `Group` adding the node's `LocalAdmins` (the setup account and the `SWM` service account)
+  to the local Administrators.
+
+The installation of IIS, Service Fabric and SharePoint Workflow Manager, the endpoint
+certificate, the farm creation and the SharePoint registration are **not implemented yet**.
+During development it is applied in push mode (`Start-DscConfiguration -Wait -Verbose`), and
+switching it to pull mode is planned for the end.
+
+The data disks are **not** initialised by this configuration: run
+`scripts\init\Initialize-DscDisks.ps1 -ConfigPath .\swm\CfgAppSwm.psd1`, as for the other nodes.
+`NonNodeData.Disks` describes the layout and drives the derived `Drives` letters, and
+`NonNodeData.ManageDisks` (default `$true`) is the switch that script reads: set it to `$false` when
+the storage is already prepared, and the script then does nothing.
+
+Like the other `Cfg*.psd1` files, the tracked file keeps `PSDscAllowPlainTextPassword = $True` and
+no certificate thumbprint. Run `Initialize-DscEncryption.ps1` before compiling a MOF you intend to
+apply: it patches every `Cfg*.psd1`, including this one.
 
 ## `Secrets.psd1`
 

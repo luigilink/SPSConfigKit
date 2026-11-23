@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Add the `CfgAppSwm` DSC skeleton for the SharePoint Workflow Manager (SWM) server (#102)
+  - New `scripts/swm/` folder with `CfgAppSwm.ps1` and `CfgAppSwm.psd1`, modelled on `CfgAppSql`:
+    same entry points (`-inputFile`, `-secretsFile`, `-OutputPath`), the Local Configuration Manager
+    block and the hardening shared by every node, and, for a node carrying the new `IsSWMServer` role
+    flag, a `Group` adding its `LocalAdmins` (the setup account and `svcswm`) to the local
+    Administrators. The script fails fast when no node carries `IsSWMServer`. The data disks are
+    left to `Initialize-DscDisks.ps1`, as for the other nodes (`NonNodeData.ManageDisks` is its switch). This is only the skeleton: the
+    IIS / Service Fabric / SharePoint Workflow Manager installation, the endpoint certificate, the
+    farm creation and the SharePoint registration are added in later steps, and the configuration
+    is applied in push mode while it is developed. Compiled on the lab SWM server; not applied yet.
+
 - Issue a `SharePointWorkflowCert` certificate and publish a DNS name for the SWM endpoint (#99)
   - The SharePoint Workflow Manager (SWM) farm is meant to be served over HTTPS on port 443 with a
     certificate from the lab CA rather than the self-generated one on port 12290. `CfgAppPdc.psd1`

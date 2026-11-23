@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Install the IIS prerequisites, stage the installers and open the firewall in `CfgAppSwm` (#104)
+  - `CfgAppSwm` now installs the IIS features documented for SharePoint Workflow Manager (Web
+    Server, Windows Authentication, .NET Extensibility 4.7, ASP.NET 4.7) plus the IIS management
+    tools, removes the Default Web Site (port 443; the default application pools are kept) and moves
+    the IIS and HTTPERR logs to the logs drive. It copies `<SourcePath>\SWM` to
+    `<Drives.Data>\SoftwarePackages\SWM` (no SWM-specific path setting) and opens an inbound
+    firewall rule on the Workflow Management HTTPS port, set by the new `NonNodeData.SWM.HttpsPort`
+    (default 12290, the port documented by Microsoft Learn). The Service Bus and Service Fabric ports
+    are not documented for SharePoint Workflow Manager and are not opened yet. Compiled on the lab
+    SWM server; not applied yet.
+
 - Add the `CfgAppSwm` DSC skeleton for the SharePoint Workflow Manager (SWM) server (#102)
   - New `scripts/swm/` folder with `CfgAppSwm.ps1` and `CfgAppSwm.psd1`, modelled on `CfgAppSql`:
     same entry points (`-inputFile`, `-secretsFile`, `-OutputPath`), the Local Configuration Manager

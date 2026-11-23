@@ -21,6 +21,7 @@ the farm to bring it to a known, reproducible state.
 | `scripts/pdc/CfgAppPdc.ps1`     | Sample primary domain controller + AD CS         | _Reference only_  |
 | `scripts/pull/CfgAppPull.ps1`   | Sample DSC pull server                           | _Reference only_  |
 | `scripts/sql/CfgAppSql.ps1`     | Sample SQL Server instance for the farm DBs      | _Reference only_  |
+| `scripts/swm/CfgAppSwm.ps1`     | SharePoint Workflow Manager (SWM) server &mdash; work in progress | _In development_  |
 
 > [!IMPORTANT]
 > **PDC, PULL and SQL scripts ship as examples** so the sample lab environment

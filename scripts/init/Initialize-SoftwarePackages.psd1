@@ -78,6 +78,29 @@
       Extract = $false
       Path = 'OOS\CU'
     }
-    
+    @{
+      Name = 'SharePointWorkflowManager'
+      Description = 'SharePoint Workflow Manager (SWM) - workflow engine for SharePoint 2013 workflows'
+      FileName = 'sharepointworkflowmanager.msi'
+      Url = 'https://download.microsoft.com/download/8/c/1/8c12b435-f698-4a87-8e6b-aade1d5608f3/sharepointworkflowmanager.msi'
+      Extract = $false
+      Path = 'SWM\BIN'
+    }
+    @{
+      Name = 'SharePointWorkflowManagerClient'
+      Description = 'SharePoint Workflow Manager Client (x64) - install on the SWM server and on every SharePoint server'
+      FileName = 'sharepointworkflowmanagerclient_x64.msi'
+      Url = 'https://download.microsoft.com/download/8/c/1/8c12b435-f698-4a87-8e6b-aade1d5608f3/sharepointworkflowmanagerclient_x64.msi'
+      Extract = $false
+      Path = 'SWM\BIN'
+    }
+    @{
+      Name = 'Prerequisite_ServiceFabric'
+      Description = 'Azure Service Fabric runtime 9.1.1583.9590 - minimum version supported by SharePoint Workflow Manager'
+      FileName = 'MicrosoftServiceFabric.9.1.1583.9590.exe'
+      Url = 'https://download.microsoft.com/download/b/8/a/b8a2fb98-0ec1-41e5-be98-9d8b5abf7856/MicrosoftServiceFabric.9.1.1583.9590.exe'
+      Extract = $false
+      Path = 'SWM\BIN\ServiceFabric'
+    }
   )
 }

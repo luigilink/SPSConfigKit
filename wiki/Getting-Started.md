@@ -123,7 +123,9 @@ of servers (`'sp-app-01', 'sp-wfe-01'`).
    script), then downloads each entry &mdash; SQL Server 2022 + CU,
    SharePoint Server SE + Language Pack + CU, the SharePoint
    prerequisites (.NET 4.8 and VC++ 2015&ndash;2019), Office Online
-   Server CU &mdash; into a folder layout under the configured
+   Server CU, and the SharePoint Workflow Manager installers and Azure
+   Service Fabric runtime (under `SWM\BIN`, only needed when you deploy
+   an SWM server) &mdash; into a folder layout under the configured
    `Repository` root. ISOs are expanded with Windows' built-in
    `Mount-DiskImage` pipeline, so no 7-Zip or other external tool is
    required.

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Stage the SharePoint Workflow Manager (SWM) installers on the SoftwarePackages share (#97)
+  - `Initialize-SoftwarePackages.psd1` gains three plain downloads (no change to the script): the
+    SharePoint Workflow Manager (`sharepointworkflowmanager.msi`) and its client
+    (`sharepointworkflowmanagerclient_x64.msi`) from the Microsoft Download Center, and the Azure
+    Service Fabric runtime `9.1.1583.9590`, the minimum version SWM supports. They land under a new
+    `SWM\BIN` folder (`SWM\BIN\ServiceFabric` for the runtime), next to `SPS`, `SQL` and `OOS`. The
+    `SWM` name is used rather than `WFM`: the legacy Microsoft Workflow Manager is no longer installable
+    and its support ended on 14 July 2026. This only stages the binaries: the SWM node role, the IIS /
+    Service Fabric / SWM installation, the farm creation and the SharePoint registration are follow-up
+    work. The folder layout is a first choice that may still change when the DSC consuming it is written.
+
 - Add the `SWM` (SharePoint Workflow Manager) service account to the sample Secrets (#95)
   - `Secrets.sample.psd1` gains an `SWM` service account (`CONTOSO\svcswm`), created by the existing
     `ADUser` loop in `CfgAppPdc` on the lab domain controller. It is the account the SharePoint

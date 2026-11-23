@@ -105,6 +105,23 @@ try {
     throw "No node carries IsSWMServer = `$True in $inputFile. Declare the SharePoint Workflow Manager node."
   }
 
+  # Fail fast on a ConfigurationData that predates a setting: an empty value would otherwise give
+  # an obscure compilation error (for example two MsiPackage resources with the same key).
+  $swmSettings = $configurationData.NonNodeData.SWM
+  $requiredSwmSettings = @{
+    'LogFolder'                    = $swmSettings.LogFolder
+    'ServiceFabric.FileName'       = $swmSettings.ServiceFabric.FileName
+    'ServiceFabric.MinimumVersion' = $swmSettings.ServiceFabric.MinimumVersion
+    'WorkflowClient.FileName'      = $swmSettings.WorkflowClient.FileName
+    'WorkflowClient.ProductId'     = $swmSettings.WorkflowClient.ProductId
+    'WorkflowServer.FileName'      = $swmSettings.WorkflowServer.FileName
+    'WorkflowServer.ProductId'     = $swmSettings.WorkflowServer.ProductId
+  }
+  $missingSwmSettings = @($requiredSwmSettings.Keys | Where-Object { [string]::IsNullOrWhiteSpace($requiredSwmSettings[$_]) } | Sort-Object)
+  if ($missingSwmSettings.Count) {
+    throw "NonNodeData.SWM is missing in ${inputFile}: $($missingSwmSettings -join ', '). Update the file from the version delivered with the kit."
+  }
+
   # DRY: derive certificate paths from the single share root (NonNodeData.SourcePath)
   # + each entry's CerFileName / PfxFileName, so the share host is defined only once.
   # An explicit CertPath / PfxPath on an entry is still honoured (backward compatible).

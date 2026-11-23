@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     resource, a restart request is passed on to the LCM), the SharePoint Workflow Manager Client (a
     launch condition of the SPWFM installer) and SharePoint Workflow Manager (`MsiPackage`). The file
     names, the MSI product codes and the minimum Service Fabric version are declared in
-    `NonNodeData.SWM`, and the installation logs go to the logs drive. Compiled on the lab SWM
-    server; not applied yet.
+    `NonNodeData.SWM`, and the installation logs go to the logs drive. The script fails fast, listing
+    the missing keys, when the `.psd1` predates these settings. Compiled on the lab SWM server; not
+    applied yet.
 
 - Install the IIS prerequisites, stage the installers and open the firewall in `CfgAppSwm` (#104)
   - `CfgAppSwm` now installs the IIS features documented for SharePoint Workflow Manager (Web

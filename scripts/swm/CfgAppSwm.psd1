@@ -42,8 +42,16 @@
       # HTTPS port of the Workflow Management endpoint (opened in the firewall, and used by the farm
       # creation). 12290 is the default documented by Microsoft Learn.
       HttpsPort           = 12290
-      # SQL Server hosting the farm databases (the setup account must be sysadmin on it).
-      SqlServer           = 'SQL1'
+      # SQL client alias used by the farms to reach the SQL Server hosting their databases (the
+      # setup account must be sysadmin on it). The farms store the connection strings in their
+      # management databases, so the alias lets the SQL Server move or change instance / port later
+      # without touching the farms. Same shape as SQLAlias in CfgAppSps.psd1.
+      SqlAlias            = @{
+        ServerAlias  = 'SINGLE-SWM-SPSSQL'
+        ServerName   = 'SQL1'
+        InstanceName = 'MSSQLSERVER'
+        Port         = 1433
+      }
       # Let Add-SBHost / Add-WFHost create the Windows Firewall rules of the farms. The ports are
       # not given by the cmdlet help: read them on the created farm.
       EnableFirewallRules = $true

@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Create the Service Bus farm in `CfgAppSwm`, with secrets encrypted for the DSC certificate (#108)
   - `CfgAppSwm` now creates the Service Bus farm (`New-SBFarm`) and adds the SWM server to it
     (`Add-SBHost`), as the setup account, with auto-generated certificates (the lab CA certificate is
-    a later step). `NonNodeData.SWM` gains `SqlServer`, `ServiceBus.FarmDatabase` and
-    `EnableFirewallRules` (the farm cmdlets create the firewall rules; the ports are read on the created
+    a later step). The farms reach SQL through a SQL client alias (`SqlAlias` resource, as `CfgAppSps`
+    does), declared in `NonNodeData.SWM.SqlAlias` (alias, server, instance, port). `NonNodeData.SWM`
+    also gains `ServiceBus.FarmDatabase` and `EnableFirewallRules` (the farm cmdlets create the firewall rules; the ports are read on the created
     farm). The run-as password and the new `SWMCertKey` secret (certificate auto-generation key, new
     entry in `Secrets.sample.psd1`) are encrypted at compile time with the DSC encryption certificate and
     decrypted by the `Script` resources, because a `Script` resource writes the values it uses in clear

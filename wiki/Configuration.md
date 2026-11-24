@@ -67,8 +67,11 @@ It is built step by step and is **not complete**. For now it provides, for a nod
   MSI `ProductId` (it changes with every version, read it in the MSI `Property` table) and the
   minimum Service Fabric version are in `NonNodeData.SWM`; installation logs go to
   `<Drives.Logs>\<NonNodeData.SWM.LogFolder>`;
-- the **Service Bus farm** (`New-SBFarm`) and this host in the farm (`Add-SBHost`), in the databases of
-  `NonNodeData.SWM.SqlServer` (`NonNodeData.SWM.ServiceBus.FarmDatabase`). The certificates are
+- the **Service Bus farm** (`New-SBFarm`) and this host in the farm (`Add-SBHost`), in the
+  database `NonNodeData.SWM.ServiceBus.FarmDatabase`, reached through a **SQL client alias**
+  (`NonNodeData.SWM.SqlAlias`: alias, server, instance, port, the shape of `SQLAlias` in `CfgAppSps`). The
+  farms keep their connection strings in their management databases, so the alias lets the SQL Server
+  move or change instance / port later without touching them. The certificates are
   **auto-generated** (the lab CA certificate `SharePointWorkflowCert` comes in a later step), the farm runs
   as the `SWM` account, and `NonNodeData.SWM.EnableFirewallRules` (default `$true`) lets `Add-SBHost`
   create the farm firewall rules. The cmdlet help does not give the default ports: they are read on the

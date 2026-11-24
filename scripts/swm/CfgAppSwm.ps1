@@ -116,12 +116,15 @@ try {
     'WorkflowClient.ProductId'     = $swmSettings.WorkflowClient.ProductId
     'WorkflowServer.FileName'      = $swmSettings.WorkflowServer.FileName
     'WorkflowServer.ProductId'     = $swmSettings.WorkflowServer.ProductId
-    'SqlServer'                    = $swmSettings.SqlServer
+    'SqlAlias.ServerAlias'         = $swmSettings.SqlAlias.ServerAlias
+    'SqlAlias.ServerName'          = $swmSettings.SqlAlias.ServerName
+    'SqlAlias.InstanceName'        = $swmSettings.SqlAlias.InstanceName
+    'SqlAlias.Port'                = $swmSettings.SqlAlias.Port
     'ServiceBus.FarmDatabase'      = $swmSettings.ServiceBus.FarmDatabase
   }
   $missingSwmSettings = @($requiredSwmSettings.Keys | Where-Object { [string]::IsNullOrWhiteSpace($requiredSwmSettings[$_]) } | Sort-Object)
   if ($missingSwmSettings.Count) {
-    throw "NonNodeData.SWM is missing in ${inputFile}: $($missingSwmSettings -join ', '). Update the file from the version delivered with the kit."
+    throw "NonNodeData.SWM settings are missing in ${inputFile}: $($missingSwmSettings -join ', '). Update the file from the version delivered with the kit."
   }
 
   # DRY: derive certificate paths from the single share root (NonNodeData.SourcePath)
@@ -223,6 +226,7 @@ try {
     #Import the required DSC resources
     Import-DscResource -ModuleName NetworkingDsc -ModuleVersion 9.1.0
     Import-DscResource -ModuleName PSDscResources -ModuleVersion 2.12.0.0
+    Import-DscResource -ModuleName SqlServerDsc -ModuleVersion 17.5.1
     Import-DscResource -ModuleName WebAdministrationDsc -ModuleVersion 4.2.1
 
     # HTTPS port of the Workflow Management endpoint. 12290 is the default documented by
@@ -414,15 +418,24 @@ try {
       # sysadmin on the SQL Server and local administrator. The run-as password and the
       # certificate key are encrypted for the DSC certificate and decrypted inside the Script.
       # The default Service Bus ports are not set: they are read on the created farm.
-      $swmSqlServer = $ConfigurationData.NonNodeData.SWM.SqlServer
-      $sbFarmDb = 'Data Source={0};Initial Catalog={1};Integrated Security=True' -f $swmSqlServer, $ConfigurationData.NonNodeData.SWM.ServiceBus.FarmDatabase
+      # The farms reach the SQL Server through a SQL client alias, as SharePoint does.
+      $swmSqlAlias = $ConfigurationData.NonNodeData.SWM.SqlAlias
+      SqlAlias MIDDLEWARE_SWMSqlAlias {
+        Ensure            = 'Present'
+        Protocol          = 'TCP'
+        TcpPort           = $swmSqlAlias.Port
+        UseDynamicTcpPort = $False
+        Name              = $swmSqlAlias.ServerAlias
+        ServerName        = "$($swmSqlAlias.ServerName)\$($swmSqlAlias.InstanceName)"
+      }
+      $sbFarmDb = 'Data Source={0};Initial Catalog={1};Integrated Security=True' -f $swmSqlAlias.ServerAlias, $ConfigurationData.NonNodeData.SWM.ServiceBus.FarmDatabase
       $swmRunAsAccount = $SWM.UserName
       $swmEnableFirewall = [bool]$ConfigurationData.NonNodeData.SWM.EnableFirewallRules
       $encSwmPassword = Protect-SwmSecret -CertificatePath $Node.CertificateFile -PlainText $SWM.GetNetworkCredential().Password
       $encSwmCertKey = Protect-SwmSecret -CertificatePath $Node.CertificateFile -PlainText $SWMCertKey.GetNetworkCredential().Password
 
       Script MIDDLEWARE_SWMCreateServiceBusFarm {
-        DependsOn            = '[MsiPackage]MIDDLEWARE_SWMInstallServer'
+        DependsOn            = '[MsiPackage]MIDDLEWARE_SWMInstallServer', '[SqlAlias]MIDDLEWARE_SWMSqlAlias'
         PsDscRunAsCredential = $SETUP
         GetScript            = { return @{ Result = 'Service Bus farm' } }
         TestScript           = {

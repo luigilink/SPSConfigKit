@@ -41,22 +41,30 @@
     SWM         = @{
       # HTTPS port of the Workflow Management endpoint (opened in the firewall, and used by the farm
       # creation). 12290 is the default documented by Microsoft Learn.
-      HttpsPort      = 12290
+      HttpsPort           = 12290
+      # SQL Server hosting the farm databases (the setup account must be sysadmin on it).
+      SqlServer           = 'SQL1'
+      # Let Add-SBHost / Add-WFHost create the Windows Firewall rules of the farms. The ports are
+      # not given by the cmdlet help: read them on the created farm.
+      EnableFirewallRules = $true
+      ServiceBus          = @{
+        FarmDatabase = 'SBManagementDB'
+      }
       # Installation logs, relative to Drives.Logs.
-      LogFolder      = 'LOGS\SWM'
+      LogFolder           = 'LOGS\SWM'
       # Installers, relative to <Drives.Data>\SoftwarePackages\SWM\BIN (staged from the share by
       # Initialize-SoftwarePackages). The MSI ProductId changes with every version: read it with
       # the Windows Installer API (Property table) when a package is updated.
-      ServiceFabric  = @{
+      ServiceFabric       = @{
         FileName       = 'ServiceFabric\MicrosoftServiceFabric.9.1.1583.9590.exe'
         # Minimum version documented by Microsoft Learn for SharePoint Workflow Manager.
         MinimumVersion = '9.1.1583.9590'
       }
-      WorkflowClient = @{
+      WorkflowClient      = @{
         FileName  = 'sharepointworkflowmanagerclient_x64.msi'
         ProductId = '{CE257EBF-44F7-4CDD-8AB5-08DDE86FE024}'
       }
-      WorkflowServer = @{
+      WorkflowServer      = @{
         FileName  = 'sharepointworkflowmanager.msi'
         ProductId = '{04A7199E-565D-4654-88A3-80A9A7BADDD9}'
       }

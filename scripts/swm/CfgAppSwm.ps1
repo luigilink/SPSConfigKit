@@ -30,8 +30,8 @@
   the common hardening shared by every node of the kit, the local administrators of the SWM
   server, the IIS prerequisites (and IIS logging), the copy of the installers from the share,
   the installation of Service Fabric, the SharePoint Workflow Manager Client and SharePoint
-  Workflow Manager, and the firewall rule of the Workflow Management endpoint. The endpoint
-  certificate and the farm creation are added next.
+  Workflow Manager, the Service Bus farm, and the firewall rule of the Workflow Management
+  endpoint. The Workflow Manager farm and the endpoint certificate are added next.
 
   The role is SharePoint Workflow Manager (SWM), not the legacy Microsoft Workflow Manager,
   which is no longer installable (support ended on 14 July 2026).
@@ -116,6 +116,8 @@ try {
     'WorkflowClient.ProductId'     = $swmSettings.WorkflowClient.ProductId
     'WorkflowServer.FileName'      = $swmSettings.WorkflowServer.FileName
     'WorkflowServer.ProductId'     = $swmSettings.WorkflowServer.ProductId
+    'SqlServer'                    = $swmSettings.SqlServer
+    'ServiceBus.FarmDatabase'      = $swmSettings.ServiceBus.FarmDatabase
   }
   $missingSwmSettings = @($requiredSwmSettings.Keys | Where-Object { [string]::IsNullOrWhiteSpace($requiredSwmSettings[$_]) } | Sort-Object)
   if ($missingSwmSettings.Count) {
@@ -174,6 +176,33 @@ try {
   }
   else {
     throw "Missing $secretsFile"
+  }
+
+  # The farm cmdlets need the run-as password and the certificate auto-generation key as
+  # SecureString. They are encrypted at compile time with the DSC encryption certificate, so
+  # neither of them is written in clear text in the MOF (see Protect-SwmSecret).
+  foreach ($secretName in 'SWM', 'SWMCertKey') {
+    if (-not (Get-Variable -Name $secretName -ErrorAction SilentlyContinue)) {
+      throw "Missing '$secretName' entry in $secretsFile. Update the file from Secrets.sample.psd1."
+    }
+  }
+  $dscCertificateFile = ($configurationData.AllNodes | Where-Object { $_.NodeName -eq '*' }).CertificateFile
+  if ([string]::IsNullOrWhiteSpace($dscCertificateFile) -or -not (Test-Path -Path $dscCertificateFile)) {
+    throw "The DSC encryption certificate (CertificateFile = '$dscCertificateFile') was not found. Run scripts\init\Initialize-DscEncryption.ps1 first."
+  }
+
+  function Protect-SwmSecret {
+    <#
+      .SYNOPSIS
+      Encrypts a secret for the DSC encryption certificate (public certificate only). The Script
+      resources decrypt it with Unprotect-CmsMessage, run by an account that can read the private
+      key of the certificate on the node.
+    #>
+    param(
+      [Parameter(Mandatory = $true)] [System.String] $CertificatePath,
+      [Parameter(Mandatory = $true)] [System.String] $PlainText
+    )
+    return (Protect-CmsMessage -To $CertificatePath -Content $PlainText)
   }
 
   #Initialization of the output path for the generated MOF files.
@@ -378,6 +407,56 @@ try {
         Path      = (Join-Path $swmBin $ConfigurationData.NonNodeData.SWM.WorkflowServer.FileName)
         ProductId = $ConfigurationData.NonNodeData.SWM.WorkflowServer.ProductId
         LogPath   = (Join-Path $swmLogs 'SWMServerInstall.log')
+      }
+
+      # Service Bus farm, then this host in the farm. The certificates are auto-generated (the
+      # lab CA certificate comes in a later step). The cmdlets run as the setup account, which is
+      # sysadmin on the SQL Server and local administrator. The run-as password and the
+      # certificate key are encrypted for the DSC certificate and decrypted inside the Script.
+      # The default Service Bus ports are not set: they are read on the created farm.
+      $swmSqlServer = $ConfigurationData.NonNodeData.SWM.SqlServer
+      $sbFarmDb = 'Data Source={0};Initial Catalog={1};Integrated Security=True' -f $swmSqlServer, $ConfigurationData.NonNodeData.SWM.ServiceBus.FarmDatabase
+      $swmRunAsAccount = $SWM.UserName
+      $swmEnableFirewall = [bool]$ConfigurationData.NonNodeData.SWM.EnableFirewallRules
+      $encSwmPassword = Protect-SwmSecret -CertificatePath $Node.CertificateFile -PlainText $SWM.GetNetworkCredential().Password
+      $encSwmCertKey = Protect-SwmSecret -CertificatePath $Node.CertificateFile -PlainText $SWMCertKey.GetNetworkCredential().Password
+
+      Script MIDDLEWARE_SWMCreateServiceBusFarm {
+        DependsOn            = '[MsiPackage]MIDDLEWARE_SWMInstallServer'
+        PsDscRunAsCredential = $SETUP
+        GetScript            = { return @{ Result = 'Service Bus farm' } }
+        TestScript           = {
+          Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
+          try { $null = Get-SBFarm -SBFarmDBConnectionString $using:sbFarmDb -ErrorAction Stop; return $true } catch { return $false }
+        }
+        SetScript            = {
+          Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
+          $certKey = ConvertTo-SecureString -String (Unprotect-CmsMessage -Content $using:encSwmCertKey) -AsPlainText -Force
+          New-SBFarm -SBFarmDBConnectionString $using:sbFarmDb -RunAsAccount $using:swmRunAsAccount -CertificateAutoGenerationKey $certKey -ErrorAction Stop
+        }
+      }
+
+      Script MIDDLEWARE_SWMAddServiceBusHost {
+        DependsOn            = '[Script]MIDDLEWARE_SWMCreateServiceBusFarm'
+        PsDscRunAsCredential = $SETUP
+        GetScript            = { return @{ Result = 'Service Bus host' } }
+        TestScript           = {
+          # HostConfigurationState is the value the SPWFM installer reads ('NotStarted' = not in a farm).
+          $key = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Service Bus\1.1' -ErrorAction SilentlyContinue
+          $state = if ($key) { $key.PSObject.Properties['HostConfigurationState'] }
+          return ($null -ne $state -and $state.Value -ne 'NotStarted')
+        }
+        SetScript            = {
+          Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
+          $password = ConvertTo-SecureString -String (Unprotect-CmsMessage -Content $using:encSwmPassword) -AsPlainText -Force
+          $certKey = ConvertTo-SecureString -String (Unprotect-CmsMessage -Content $using:encSwmCertKey) -AsPlainText -Force
+          Add-SBHost -SBFarmDBConnectionString $using:sbFarmDb -RunAsPassword $password -EnableFirewallRules $using:swmEnableFirewall -CertificateAutoGenerationKey $certKey -ErrorAction Stop
+        }
+      }
+
+      Log MIDDLEWARE_SWMServiceBus_Completed {
+        Message   = 'Finished running the Service Bus farm creation and host registration'
+        DependsOn = '[Script]MIDDLEWARE_SWMAddServiceBusHost'
       }
 
       # Inbound rule for the Workflow Management endpoint (HTTPS 12290 by default). It is the only

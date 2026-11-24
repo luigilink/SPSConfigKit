@@ -107,6 +107,16 @@
       Password    = '******************'
     }
     @{
+      # Passphrase of the certificates the SharePoint Workflow Manager farms generate. Only the
+      # password is read; keep it, it is needed to add hosts to the farms later.
+      Name        = 'SWMCertKey'
+      DisplayName = 'SWM Certificate Generation Key'
+      Description = 'SharePoint Workflow Manager certificate auto-generation key'
+      Username    = 'SWMCertKey'
+      IsAdAccount = $False
+      Password    = '******************'
+    }
+    @{
       Name        = 'Passphrase'
       DisplayName = 'SharePoint Passphrase'
       Description = 'SharePoint Passphrase Account'

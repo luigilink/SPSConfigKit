@@ -67,6 +67,12 @@ It is built step by step and is **not complete**. For now it provides, for a nod
   MSI `ProductId` (it changes with every version, read it in the MSI `Property` table) and the
   minimum Service Fabric version are in `NonNodeData.SWM`; installation logs go to
   `<Drives.Logs>\<NonNodeData.SWM.LogFolder>`;
+- the **Service Bus farm** (`New-SBFarm`) and this host in the farm (`Add-SBHost`), in the databases of
+  `NonNodeData.SWM.SqlServer` (`NonNodeData.SWM.ServiceBus.FarmDatabase`). The certificates are
+  **auto-generated** (the lab CA certificate `SharePointWorkflowCert` comes in a later step), the farm runs
+  as the `SWM` account, and `NonNodeData.SWM.EnableFirewallRules` (default `$true`) lets `Add-SBHost`
+  create the farm firewall rules. The cmdlet help does not give the default ports: they are read on the
+  created farm. The Workflow Manager farm itself (`New-WFFarm` / `Add-WFHost`) is the next iteration;
 - an inbound **firewall rule** for the Workflow Management endpoint, on the port set by
   `NonNodeData.SWM.HttpsPort` (default **12290**, the HTTPS port documented by Microsoft Learn).
 
@@ -76,8 +82,17 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 > Service Bus and Service Fabric use. Those are **not** opened from memory: they will be added once
 > checked on a configured server (rules before / after the installation).
 
-The endpoint certificate import, the farm creation and the SharePoint registration are **not
+The Workflow Manager farm, the endpoint certificate and the SharePoint registration are **not
 implemented yet**.
+
+**Secrets.** `New-SBFarm` / `Add-SBHost` need the `SWM` password and the certificate auto-generation key
+(`SWMCertKey` in `Secrets.psd1`, keep it: it is needed to add hosts later) as `SecureString`. A `Script`
+resource copies the values it uses in **clear text** into the MOF, and DSC only encrypts `PSCredential`
+properties. So `CfgAppSwm` encrypts both secrets at compile time with the DSC encryption certificate
+(`CertificateFile` of the wildcard block, public part only; `Protect-CmsMessage`, Windows only) and the
+`Script` decrypts them with `Unprotect-CmsMessage`, run by the setup account (local administrator, so it
+can read the private key). The compilation fails with an explicit message when `SWM`, `SWMCertKey` or the
+DSC certificate is missing: run `Initialize-DscEncryption.ps1` first.
 During development it is applied in push mode, and switching it to pull mode is planned for the end.
 In push mode, apply the Local Configuration Manager settings **first**, because
 `Start-DscConfiguration` does not apply the `<node>.meta.mof`: without it the LCM has no
@@ -169,7 +184,7 @@ relevant to your deployment.
 | `PULLSETUP`, `IISPULLAPP`, `DscPullCert`                                                         | PULL server (`CfgAppPull`) | **Yes** — only when a node declares `IsPullServer` |
 | `SETUP`, `FARM`, `IISAPP`, `SEARCH`, `CONTENT`, `SUPERUSER`, `SUPEREADER`, `Passphrase`, `SharePointCert`, `OfficeOnlineCert` | SharePoint (`CfgAppSps`) | No — core farm accounts          |
 | `ADSYNC`                                                                                        | User Profile AD Import (`CfgAppSps`; lab grant in `CfgAppPdc`) | **Yes** — only when User Profile AD Import is used |
-| `SWM`, `SharePointWorkflowCert`                                                                  | SharePoint Workflow Manager (SWM server; the certificate is issued by `CfgAppPdc`) | **Yes** — only when an SWM server is deployed |
+| `SWM`, `SWMCertKey`, `SharePointWorkflowCert`                                                    | SharePoint Workflow Manager (SWM server: run-as account, certificate auto-generation key; the certificate is issued by `CfgAppPdc`) | **Yes** — only when an SWM server is deployed |
 
 - The **AD / PDC** brick provisions an Active Directory domain controller. It is
   meant for labs and demos; in production the domain already exists, so these

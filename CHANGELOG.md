@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Create the Service Bus and Workflow Manager farms in `CfgAppSwm`, with secrets encrypted for the DSC certificate (#108)
+  - `CfgAppSwm` also removes the default IIS application pools, as `CfgAppSps` and the Office Online Server
+    block do. They have no application on the lab server, and SPWFM creates its own pool.
+  - `CfgAppSwm` now creates the Service Bus farm (`New-SBFarm`) and adds the SWM server to it
+    (`Add-SBHost`), as the setup account, with auto-generated certificates (the lab CA certificate is
+    a later step). The farms reach SQL through a SQL client alias (`SqlAlias` resource, as `CfgAppSps`
+    does), declared in `NonNodeData.SWM.SqlAlias` (alias, server, instance, port). `NonNodeData.SWM`
+    also gains `ServiceBus.FarmDatabase` and `EnableFirewallRules` (the farm cmdlets create the firewall rules; the ports are read on the created
+    farm). The run-as password and the new `SWMCertKey` secret (certificate auto-generation key, new
+    entry in `Secrets.sample.psd1`) are encrypted at compile time with the DSC encryption certificate and
+    decrypted by the `Script` resources, because a `Script` resource writes the values it uses in clear
+    text in the MOF. The script fails fast when the secrets or the DSC certificate are missing. Compiled
+    on the lab SWM server with fake secrets (no secret in clear text in the MOF). The Service Bus farm was
+    applied on the lab (farm and host completed, services running as the run-as account, firewall rules
+    created by `Add-SBHost`). The Service Bus namespace (`WorkflowDefaultNamespace`), `New-WFFarm` and
+    `Add-WFHost` are compiled; the first apply of `Add-WFHost` failed because the cmdlet prompts for the mandatory
+    `-CertificateAutoGenerationKey` (not listed by `Get-Command`), which is now passed. The second one failed
+    with a 401 *Manage* error from Service Bus: the setup account that runs `Add-WFHost` was not a manager
+    of the namespace, so it is added (`Set-SBNamespace` on an existing namespace), and the host tests wait
+    for `HostConfigurationState = Completed`. A `Log`
+    `MIDDLEWARE_SWM_Completed` marks the end.
+
 - Install Service Fabric, the SharePoint Workflow Manager Client and SharePoint Workflow Manager in `CfgAppSwm` (#106)
   - `CfgAppSwm` now installs, in the order the installers require, the Azure Service Fabric Runtime
     (`/accepteula`, 9.1.1583.9590 or higher as documented by Microsoft Learn; guarded `Script`
@@ -20,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Install the IIS prerequisites, stage the installers and open the firewall in `CfgAppSwm` (#104)
   - `CfgAppSwm` now installs the IIS features documented for SharePoint Workflow Manager (Web
     Server, Windows Authentication, .NET Extensibility 4.7, ASP.NET 4.7) plus the IIS management
-    tools, removes the Default Web Site (port 443; the default application pools are kept) and moves
+    tools, removes the Default Web Site (port 443) and moves
     the IIS and HTTPERR logs to the logs drive. It copies `<SourcePath>\SWM` to
     `<Drives.Data>\SoftwarePackages\SWM` (no SWM-specific path setting) and opens an inbound
     firewall rule on the Workflow Management HTTPS port, set by the new `NonNodeData.SWM.HttpsPort`

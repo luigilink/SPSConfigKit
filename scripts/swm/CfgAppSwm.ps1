@@ -221,6 +221,34 @@ try {
     New-Item -Path $mofOutputPath -ItemType Directory | Out-Null
   }
 
+  function Get-CertThumbprint() {
+    param
+    (
+      [parameter(Mandatory = $true)]
+      [System.String]
+      $CertPath
+    )
+    try {
+      $certObject = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+      $certObject.Import($CertPath, "", 'DefaultKeySet')
+      $item = Get-Item $CertPath
+      return @{
+        Error      = $false
+        Thumbprint = $certObject.Thumbprint
+        BaseName   = $item.BaseName
+      }
+    }
+    catch {
+      Write-Warning $_.Exception.Message
+      Write-Warning "$CertPath was not found"
+      return @{
+        Error      = $true
+        Thumbprint = "0000000000000000000000000000000000000000"
+        BaseName   = "ERROR"
+      }
+    }
+  }
+
   Configuration CfgAppSwm {
     # NOTE: Module versions below MUST stay in sync with
     #       scripts/init/Initialize-DscNode.psd1 (Modules table).
@@ -533,7 +561,11 @@ try {
         if ($null -eq $swmSslCert) {
           throw "NonNodeData.SWM.SslCertificateName is '$swmSslCertName' but no ADC certificate has that name in NonNodeData.ADC.certificates."
         }
-        $swmSslThumbprint = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $swmSslCert.CertPath).Thumbprint
+        $swmSslCertInfo = Get-CertThumbprint -CertPath "$($swmSslCert.CertPath)"
+        if ($swmSslCertInfo.Error) {
+          throw "The certificate '$swmSslCertName' could not be read from $($swmSslCert.CertPath)."
+        }
+        $swmSslThumbprint = $swmSslCertInfo.Thumbprint
 
         PfxImport MIDDLEWARE_SWMSslCertificateImport {
           DependsOn  = '[Script]MIDDLEWARE_SWMAddWorkflowHost'
@@ -557,7 +589,7 @@ try {
           }
           SetScript            = {
             Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
-            Set-WFCertificate -WFFarmDBConnectionString $using:wfFarmDb -SslCertificateThumbprint $using:swmSslThumbprint -ErrorAction Stop
+            Set-WFCertificate -WFFarmDBConnectionString $using:wfFarmDb -SslCertificateThumbprint $using:swmSslThumbprint -EncryptionCertificateThumbprint $using:swmSslThumbprint -ErrorAction Stop
             Update-WFHost -WFFarmDBConnectionString $using:wfFarmDb -ErrorAction Stop
           }
         }

@@ -10,7 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Use the lab CA certificate on the Workflow Manager endpoint in `CfgAppSwm` (#110)
   - `CfgAppSwm` imports `SharePointWorkflowCert` into `LocalMachine\My` (`PfxImport`, PFX password from the
     `Secrets.psd1` entry of the same name) and sets it as the SSL certificate of the Workflow Manager farm
-    (`Set-WFCertificate -SslCertificateThumbprint`, then `Update-WFHost`, as the cmdlet help requires).
+    (`Set-WFCertificate -SslCertificateThumbprint -EncryptionCertificateThumbprint`, then `Update-WFHost`, as
+    the cmdlet help requires; the SSL thumbprint alone is refused when the farm uses generated certificates).
+    The thumbprint is read with the `Get-CertThumbprint` function of `CfgAppSps`.
     It is opt-in through the new `NonNodeData.SWM.SslCertificateName` (with an `NonNodeData.ADC.certificates`
     entry): without it the farm keeps its auto-generated certificate. The Service Bus certificates stay
     auto-generated. The `ADC`, `SQLAlias` and `IIS` blocks of `CfgAppSwm.psd1` follow the order and the

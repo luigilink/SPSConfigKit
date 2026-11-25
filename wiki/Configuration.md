@@ -89,7 +89,9 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 - the **lab CA certificate** `SharePointWorkflowCert` (`NonNodeData.SWM.SslCertificateName`, its entry in
   `NonNodeData.ADC.certificates` and its PFX password in `Secrets.psd1`) as the SSL certificate of the
   Workflow Management endpoint: `PfxImport` into `LocalMachine\My`, then `Set-WFCertificate
-  -SslCertificateThumbprint` and `Update-WFHost` (as the cmdlet help requires). Remove
+  -SslCertificateThumbprint -EncryptionCertificateThumbprint` (the same certificate for both) and
+  `Update-WFHost` (as the cmdlet help requires). `-SslCertificateThumbprint` alone fails with *All
+  certificates thumbprint is needed to go from generated certificates to custom certificates*. Remove
   `SslCertificateName` to keep the auto-generated certificate. The Service Bus certificates stay
   auto-generated;
 - an inbound **firewall rule** for the Workflow Management endpoint, on the port set by

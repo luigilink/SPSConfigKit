@@ -56,8 +56,9 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 - the **IIS prerequisites** documented for SharePoint Workflow Manager (`Web-Server`,
   `Web-Windows-Auth`, `Web-Net-Ext45`, `Web-Asp-Net45`) and the IIS management tools
   (`Web-Mgmt-Tools`, `Web-Mgmt-Console`, handy to bind the endpoint certificate in IIS Manager),
-  the removal of the **Default Web Site** (it holds port 443; the default application pools are
-  kept) and the IIS / HTTPERR logs moved under `Drives.Logs` (`NonNodeData.IIS`);
+  the removal of the **Default Web Site** (it holds port 443) and of the default **application pools**
+  (`.NET v2.0`, `.NET v2.0 Classic`, `.NET v4.5`, `.NET v4.5 Classic`, `Classic .NET AppPool`,
+  `DefaultAppPool`, the same list as `CfgAppSps` and the Office Online Server block), and the IIS / HTTPERR logs moved under `Drives.Logs` (`NonNodeData.IIS`);
 - the copy of the installers from `<NonNodeData.SourcePath>\SWM` to
   `<Drives.Data>\SoftwarePackages\SWM` (no SWM-specific path setting);
 - the **installation**, in the order the installers require: Azure Service Fabric
@@ -107,8 +108,9 @@ The endpoint certificate and the SharePoint registration are **not implemented y
 - A Service Bus namespace must exist before `Add-WFHost` (`Get-SBClientConfiguration` fails with *There are
   no namespaces to get client configuration*). The namespace managers are the run-as account, which is not
   documented and still to be confirmed.
-- The Default Web Site is removed because it holds port 443. The default application pools are kept, as it is
-  not documented whether SPWFM relies on them.
+- The Default Web Site is removed because it holds port 443. The default application pools are removed too:
+  on the lab server they have no application, and SPWFM creates its own pool (`WorkflowMgmt…`, running as the
+  run-as account), which is not in the removal list.
 
 **Secrets.** `New-SBFarm` / `Add-SBHost` need the `SWM` password and the certificate auto-generation key
 (`SWMCertKey` in `Secrets.psd1`, keep it: it is needed to add hosts later) as `SecureString`. A `Script`

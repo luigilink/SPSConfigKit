@@ -300,7 +300,14 @@ try {
         return "[WindowsFeature]WindowsFeature-$_"
       }
 
-      # Frees port 443; the default application pools are kept (SPWFM may rely on them).
+      $appPoolToRemove = @('.NET v2.0', '.NET v2.0 Classic', '.NET v4.5', '.NET v4.5 Classic', 'Classic .NET AppPool', 'DefaultAppPool')
+      foreach ($appPool in $appPoolToRemove) {
+        WebAppPool ('MIDDLEWARE_' + $appPool.Replace(' ', '')) {
+          DependsOn = $prereqDependencies
+          Ensure    = 'Absent'
+          Name      = $appPool
+        }
+      }
       WebSite MIDDLEWARE_RemoveDefaultWebSite {
         DependsOn    = $prereqDependencies
         Ensure       = 'Absent'

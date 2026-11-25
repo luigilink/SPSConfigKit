@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Create the Service Bus and Workflow Manager farms in `CfgAppSwm`, with secrets encrypted for the DSC certificate (#108)
+  - `CfgAppSwm` also removes the default IIS application pools, as `CfgAppSps` and the Office Online Server
+    block do. They have no application on the lab server, and SPWFM creates its own pool.
   - `CfgAppSwm` now creates the Service Bus farm (`New-SBFarm`) and adds the SWM server to it
     (`Add-SBHost`), as the setup account, with auto-generated certificates (the lab CA certificate is
     a later step). The farms reach SQL through a SQL client alias (`SqlAlias` resource, as `CfgAppSps`
@@ -37,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Install the IIS prerequisites, stage the installers and open the firewall in `CfgAppSwm` (#104)
   - `CfgAppSwm` now installs the IIS features documented for SharePoint Workflow Manager (Web
     Server, Windows Authentication, .NET Extensibility 4.7, ASP.NET 4.7) plus the IIS management
-    tools, removes the Default Web Site (port 443; the default application pools are kept) and moves
+    tools, removes the Default Web Site (port 443) and moves
     the IIS and HTTPERR logs to the logs drive. It copies `<SourcePath>\SWM` to
     `<Drives.Data>\SoftwarePackages\SWM` (no SWM-specific path setting) and opens an inbound
     firewall rule on the Workflow Management HTTPS port, set by the new `NonNodeData.SWM.HttpsPort`

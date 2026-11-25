@@ -30,9 +30,9 @@
   the common hardening shared by every node of the kit, the local administrators of the SWM
   server, the IIS prerequisites (and IIS logging), the copy of the installers from the share,
   the installation of Service Fabric, the SharePoint Workflow Manager Client and SharePoint
-  Workflow Manager, the Service Bus and Workflow Manager farms, and the firewall rule of the
-  Workflow Management endpoint. The endpoint certificate and the SharePoint registration are
-  added next.
+  Workflow Manager, the Service Bus and Workflow Manager farms, the lab CA certificate of the
+  Workflow Management endpoint, and its firewall rule. The SharePoint registration is added
+  next.
 
   The role is SharePoint Workflow Manager (SWM), not the legacy Microsoft Workflow Manager,
   which is no longer installable (support ended on 14 July 2026).
@@ -184,7 +184,7 @@ try {
   }
 
   # A Script resource writes its values in clear text in the MOF: the farm secrets are encrypted instead.
-  foreach ($secretName in 'SWM', 'SWMCertKey') {
+  foreach ($secretName in @('SWM', 'SWMCertKey') + @($configurationData.NonNodeData.SWM.SslCertificateName | Where-Object { $_ })) {
     if (-not (Get-Variable -Name $secretName -ErrorAction SilentlyContinue)) {
       throw "Missing '$secretName' entry in $secretsFile. Update the file from Secrets.sample.psd1."
     }
@@ -224,6 +224,7 @@ try {
     # NOTE: Module versions below MUST stay in sync with
     #       scripts/init/Initialize-DscNode.psd1 (Modules table).
     #Import the required DSC resources
+    Import-DscResource -ModuleName CertificateDsc -ModuleVersion 6.0.0
     Import-DscResource -ModuleName NetworkingDsc -ModuleVersion 9.1.0
     Import-DscResource -ModuleName PSDscResources -ModuleVersion 2.12.0.0
     Import-DscResource -ModuleName SqlServerDsc -ModuleVersion 17.5.1
@@ -524,9 +525,47 @@ try {
         }
       }
 
+      $swmCompletedDependsOn = @('[Script]MIDDLEWARE_SWMAddWorkflowHost')
+      $swmSslCertName = $ConfigurationData.NonNodeData.SWM.SslCertificateName
+      if ($swmSslCertName) {
+        $swmSslCert = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object { $_.Name -eq $swmSslCertName }
+        if ($null -eq $swmSslCert) {
+          throw "NonNodeData.SWM.SslCertificateName is '$swmSslCertName' but no ADC certificate has that name in NonNodeData.ADC.certificates."
+        }
+        $swmSslThumbprint = (New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $swmSslCert.CertPath).Thumbprint
+
+        PfxImport MIDDLEWARE_SWMSslCertificateImport {
+          DependsOn  = '[Script]MIDDLEWARE_SWMAddWorkflowHost'
+          Thumbprint = $swmSslThumbprint
+          Path       = $swmSslCert.PfxPath
+          Store      = 'My'
+          Location   = 'LocalMachine'
+          Credential = (Get-Variable -Name $swmSslCertName -ValueOnly)
+          Exportable = $true
+          Ensure     = 'Present'
+        }
+
+        Script MIDDLEWARE_SWMSetSslCertificate {
+          DependsOn            = '[PfxImport]MIDDLEWARE_SWMSslCertificateImport'
+          PsDscRunAsCredential = $SETUP
+          GetScript            = { return @{ Result = 'Workflow Manager SSL certificate' } }
+          TestScript           = {
+            Import-Module WebAdministration
+            $binding = Get-WebBinding -Name 'Workflow Management Site' -Protocol https | Select-Object -First 1
+            return ($null -ne $binding -and $binding.certificateHash -eq $using:swmSslThumbprint)
+          }
+          SetScript            = {
+            Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
+            Set-WFCertificate -WFFarmDBConnectionString $using:wfFarmDb -SslCertificateThumbprint $using:swmSslThumbprint -ErrorAction Stop
+            Update-WFHost -WFFarmDBConnectionString $using:wfFarmDb -ErrorAction Stop
+          }
+        }
+        $swmCompletedDependsOn += '[Script]MIDDLEWARE_SWMSetSslCertificate'
+      }
+
       Log MIDDLEWARE_SWM_Completed {
         Message   = 'Finished running the SharePoint Workflow Manager farm creation and host registration'
-        DependsOn = '[Script]MIDDLEWARE_SWMAddWorkflowHost'
+        DependsOn = $swmCompletedDependsOn
       }
 
       # Only port documented by Microsoft Learn; the farm cmdlets open the Service Bus ones.

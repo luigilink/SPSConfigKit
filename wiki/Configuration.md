@@ -86,6 +86,12 @@ It is built step by step and is **not complete**. For now it provides, for a nod
   created because `Get-SBClientConfiguration` fails with *There are no namespaces to get client
   configuration* otherwise; its managers are the run-as account (not documented, to be confirmed). A
   `Log` named `MIDDLEWARE_SWM_Completed` marks the end, for a SharePoint node to wait for;
+- the **lab CA certificate** `SharePointWorkflowCert` (`NonNodeData.SWM.SslCertificateName`, its entry in
+  `NonNodeData.ADC.certificates` and its PFX password in `Secrets.psd1`) as the SSL certificate of the
+  Workflow Management endpoint: `PfxImport` into `LocalMachine\My`, then `Set-WFCertificate
+  -SslCertificateThumbprint` and `Update-WFHost` (as the cmdlet help requires). Remove
+  `SslCertificateName` to keep the auto-generated certificate. The Service Bus certificates stay
+  auto-generated;
 - an inbound **firewall rule** for the Workflow Management endpoint, on the port set by
   `NonNodeData.SWM.HttpsPort` (default **12290**, the HTTPS port documented by Microsoft Learn).
 
@@ -95,7 +101,7 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 > Service Bus and Service Fabric use. Those are **not** opened from memory: they will be added once
 > checked on a configured server (rules before / after the installation).
 
-The endpoint certificate and the SharePoint registration are **not implemented yet**.
+The SharePoint registration is **not implemented yet**.
 
 **Behaviours learned on the lab server.**
 
@@ -397,8 +403,8 @@ port 12290. For that, `CfgAppPdc.psd1` carries:
 The endpoint port is the `NonNodeData.SWM.HttpsPort` setting of `CfgAppSwm.psd1` (default
 **12290**, the documented value); 443 is to be tested on the SWM server and then set there.
 
-This only issues the certificate and publishes the name. Importing it on the SWM server, creating
-the farm and registering it in SharePoint are not automated yet.
+`CfgAppPdc` only issues the certificate and publishes the name. `CfgAppSwm` imports it and sets it as the SSL
+certificate of the Workflow Manager farm (see above); registering the farm in SharePoint is not automated yet.
 
 ## `scripts/sps/CfgAppSps.psd1`
 

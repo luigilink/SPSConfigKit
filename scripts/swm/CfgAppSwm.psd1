@@ -48,6 +48,8 @@
         InstanceName = 'MSSQLSERVER'
         Port         = 1433
       }
+      # ADC certificate set as the SSL certificate of the Workflow Manager farm; remove to keep the auto-generated one.
+      SslCertificateName  = 'SharePointWorkflowCert'
       # Let Add-SBHost / Add-WFHost create the firewall rules of the farms.
       EnableFirewallRules = $true
       ServiceBus          = @{
@@ -73,6 +75,15 @@
         FileName  = 'sharepointworkflowmanager.msi'
         ProductId = '{04A7199E-565D-4654-88A3-80A9A7BADDD9}'
       }
+    }
+    ADC         = @{
+      certificates = @(
+        @{
+          Name         = 'SharePointWorkflowCert'
+          CerFileName  = 'SharePointWorkflow.cer'
+          PfxFileName  = 'SharePointWorkflow.pfx'
+        }
+      )
     }
     # IIS log folders, relative to Drives.Logs.
     IIS         = @{

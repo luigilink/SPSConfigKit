@@ -28,9 +28,10 @@
 
   The configuration is built step by step. It currently covers the Local Configuration Manager,
   the common hardening shared by every node of the kit, the local administrators of the SWM
-  server, the IIS prerequisites (and IIS logging), the copy of the installers from the share and
-  the firewall rule of the Workflow Management endpoint. The installation of Service Fabric and
-  SharePoint Workflow Manager, the endpoint certificate and the farm creation are added next.
+  server, the IIS prerequisites (and IIS logging), the copy of the installers from the share,
+  the installation of Service Fabric, the SharePoint Workflow Manager Client and SharePoint
+  Workflow Manager, and the firewall rule of the Workflow Management endpoint. The endpoint
+  certificate and the farm creation are added next.
 
   The role is SharePoint Workflow Manager (SWM), not the legacy Microsoft Workflow Manager,
   which is no longer installable (support ended on 14 July 2026).
@@ -102,6 +103,23 @@ try {
   # Fail fast: without an IsSWMServer node the configuration would compile only the common block.
   if (-not @($configurationData.AllNodes | Where-Object { $_.IsSWMServer }).Count) {
     throw "No node carries IsSWMServer = `$True in $inputFile. Declare the SharePoint Workflow Manager node."
+  }
+
+  # Fail fast on a ConfigurationData that predates a setting: an empty value would otherwise give
+  # an obscure compilation error (for example two MsiPackage resources with the same key).
+  $swmSettings = $configurationData.NonNodeData.SWM
+  $requiredSwmSettings = @{
+    'LogFolder'                    = $swmSettings.LogFolder
+    'ServiceFabric.FileName'       = $swmSettings.ServiceFabric.FileName
+    'ServiceFabric.MinimumVersion' = $swmSettings.ServiceFabric.MinimumVersion
+    'WorkflowClient.FileName'      = $swmSettings.WorkflowClient.FileName
+    'WorkflowClient.ProductId'     = $swmSettings.WorkflowClient.ProductId
+    'WorkflowServer.FileName'      = $swmSettings.WorkflowServer.FileName
+    'WorkflowServer.ProductId'     = $swmSettings.WorkflowServer.ProductId
+  }
+  $missingSwmSettings = @($requiredSwmSettings.Keys | Where-Object { [string]::IsNullOrWhiteSpace($requiredSwmSettings[$_]) } | Sort-Object)
+  if ($missingSwmSettings.Count) {
+    throw "NonNodeData.SWM is missing in ${inputFile}: $($missingSwmSettings -join ', '). Update the file from the version delivered with the kit."
   }
 
   # DRY: derive certificate paths from the single share root (NonNodeData.SourcePath)
@@ -294,9 +312,10 @@ try {
       }
 
       # Get the SWM installation files: <SourcePath>\SWM -> <Drives.Data>\SoftwarePackages\SWM
+      $swmDestination = Join-Path (Join-Path $ConfigurationData.NonNodeData.Drives.Data 'SoftwarePackages') 'SWM'
       File MIDDLEWARE_SWMGetSources {
         SourcePath      = (Join-Path $ConfigurationData.NonNodeData.SourcePath 'SWM')
-        DestinationPath = (Join-Path (Join-Path $ConfigurationData.NonNodeData.Drives.Data 'SoftwarePackages') 'SWM')
+        DestinationPath = $swmDestination
         Ensure          = 'Present'
         Recurse         = $true
         Credential      = $SETUP
@@ -307,6 +326,58 @@ try {
         #The message below gets written to the Microsoft-Windows-Desired State Configuration/Analytic log
         Message   = 'Finished running the file resource with ID MIDDLEWARE_SWMGetSources'
         DependsOn = '[File]MIDDLEWARE_SWMGetSources'
+      }
+
+      # Install order required by the installers: Azure Service Fabric (documented prerequisite of
+      # SharePoint Workflow Manager), then the Client (a launch condition of the SPWFM MSI), then
+      # SharePoint Workflow Manager (which also installs Service Bus 1.1).
+      $swmBin = Join-Path $swmDestination 'BIN'
+      $swmLogs = Join-Path $ConfigurationData.NonNodeData.Drives.Logs $ConfigurationData.NonNodeData.SWM.LogFolder
+      $serviceFabricSetup = Join-Path $swmBin $ConfigurationData.NonNodeData.SWM.ServiceFabric.FileName
+      $serviceFabricMinVersion = $ConfigurationData.NonNodeData.SWM.ServiceFabric.MinimumVersion
+
+      File MIDDLEWARE_SWMLogFolder {
+        Ensure          = 'Present'
+        Type            = 'Directory'
+        DestinationPath = $swmLogs
+      }
+
+      Script MIDDLEWARE_SWMInstallServiceFabric {
+        DependsOn  = '[Log]MIDDLEWARE_SWMGetSources_Completed'
+        GetScript  = { return @{ Result = 'Azure Service Fabric Runtime' } }
+        TestScript = {
+          $keys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+          # The LCM runs the script in strict mode, and many Uninstall keys have no DisplayName.
+          $installed = Get-ItemProperty -Path $keys -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.PSObject.Properties['DisplayVersion'] -and $_.DisplayName -like '*Service Fabric*' }
+          foreach ($entry in $installed) {
+            $version = $null
+            if ([System.Version]::TryParse([string]$entry.DisplayVersion, [ref]$version) -and $version -ge [System.Version]$using:serviceFabricMinVersion) { return $true }
+          }
+          return $false
+        }
+        SetScript  = {
+          $process = Start-Process -FilePath $using:serviceFabricSetup -ArgumentList '/accepteula' -Wait -PassThru
+          # 3010 = success, restart required: let the LCM restart the node.
+          if ($process.ExitCode -eq 3010) { $global:DSCMachineStatus = 1 }
+          elseif ($process.ExitCode -ne 0) { throw "Azure Service Fabric setup failed with exit code $($process.ExitCode)." }
+        }
+      }
+
+      MsiPackage MIDDLEWARE_SWMInstallClient {
+        DependsOn = '[Script]MIDDLEWARE_SWMInstallServiceFabric', '[File]MIDDLEWARE_SWMLogFolder'
+        Ensure    = 'Present'
+        Path      = (Join-Path $swmBin $ConfigurationData.NonNodeData.SWM.WorkflowClient.FileName)
+        ProductId = $ConfigurationData.NonNodeData.SWM.WorkflowClient.ProductId
+        LogPath   = (Join-Path $swmLogs 'SWMClientInstall.log')
+      }
+
+      MsiPackage MIDDLEWARE_SWMInstallServer {
+        DependsOn = '[MsiPackage]MIDDLEWARE_SWMInstallClient'
+        Ensure    = 'Present'
+        Path      = (Join-Path $swmBin $ConfigurationData.NonNodeData.SWM.WorkflowServer.FileName)
+        ProductId = $ConfigurationData.NonNodeData.SWM.WorkflowServer.ProductId
+        LogPath   = (Join-Path $swmLogs 'SWMServerInstall.log')
       }
 
       # Inbound rule for the Workflow Management endpoint (HTTPS 12290 by default). It is the only

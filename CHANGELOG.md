@@ -7,13 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Use the lab CA certificate on the Workflow Manager endpoint in `CfgAppSwm` (#110)
+  - `CfgAppSwm` imports `SharePointWorkflowCert` into `LocalMachine\My` (`PfxImport`, PFX password from the
+    `Secrets.psd1` entry of the same name) and sets it as the SSL certificate of the Workflow Manager farm
+    (`Set-WFCertificate -SslCertificateThumbprint`, then `Update-WFHost`, as the cmdlet help requires).
+    It is opt-in through the new `NonNodeData.SWM.SslCertificateName` (with an `NonNodeData.ADC.certificates`
+    entry): without it the farm keeps its auto-generated certificate. The Service Bus certificates stay
+    auto-generated. The `ADC`, `SQLAlias` and `IIS` blocks of `CfgAppSwm.psd1` follow the order and the
+    layout of `CfgAppSps.psd1`. Compiled on the lab SWM server; not applied yet.
+
 - Create the Service Bus and Workflow Manager farms in `CfgAppSwm`, with secrets encrypted for the DSC certificate (#108)
   - `CfgAppSwm` also removes the default IIS application pools, as `CfgAppSps` and the Office Online Server
     block do. They have no application on the lab server, and SPWFM creates its own pool.
   - `CfgAppSwm` now creates the Service Bus farm (`New-SBFarm`) and adds the SWM server to it
     (`Add-SBHost`), as the setup account, with auto-generated certificates (the lab CA certificate is
     a later step). The farms reach SQL through a SQL client alias (`SqlAlias` resource, as `CfgAppSps`
-    does), declared in `NonNodeData.SWM.SqlAlias` (alias, server, instance, port). `NonNodeData.SWM`
+    does), declared in the `NonNodeData.SQLAlias` entry named `WORKFLOW` (alias, server, instance, port). `NonNodeData.SWM`
     also gains `ServiceBus.FarmDatabase` and `EnableFirewallRules` (the farm cmdlets create the firewall rules; the ports are read on the created
     farm). The run-as password and the new `SWMCertKey` secret (certificate auto-generation key, new
     entry in `Secrets.sample.psd1`) are encrypted at compile time with the DSC encryption certificate and

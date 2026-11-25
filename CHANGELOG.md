@@ -12,7 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `Secrets.psd1` entry of the same name) and sets it as the SSL certificate of the Workflow Manager farm
     (`Set-WFCertificate -SslCertificateThumbprint -EncryptionCertificateThumbprint`, then `Update-WFHost`, as
     the cmdlet help requires; the SSL thumbprint alone is refused when the farm uses generated certificates).
-    The thumbprint is read with the `Get-CertThumbprint` function of `CfgAppSps`.
+    The thumbprint is read with the `Get-CertThumbprint` function of `CfgAppSps`. Once the certificate is in use, its
+    private key gives no access to the administrators, so `Get-WFFarm` failed with *Keyset does not exist*:
+    a `Script` run as `SYSTEM` grants them Read on the key, and the farm existence test connects to the
+    database instead of calling `Get-WFFarm`.
     It is opt-in through the new `NonNodeData.SWM.SslCertificateName` (with an `NonNodeData.ADC.certificates`
     entry): without it the farm keeps its auto-generated certificate. The Service Bus certificates stay
     auto-generated. The `ADC`, `SQLAlias` and `IIS` blocks of `CfgAppSwm.psd1` follow the order and the

@@ -119,6 +119,15 @@ The SharePoint registration is **not implemented yet**.
   *(401) Unauthorized. Authorization failed for specified action: Manage*. Both accounts are managers of the
   namespace, and an existing namespace is updated with `Set-SBNamespace`. The host stays at
   `HostConfigurationState = Started` after the failure, and a host that is not `Completed` is retried.
+- Once the lab certificate is the farm's encryption certificate, its private key has no `BUILTIN\Administrators`
+  access (only the run-as account, `SYSTEM`, `Winmgmt` and `OWNER RIGHTS`), unlike the auto-generated
+  certificates. It was observed on the lab server after the certificate step; whether `PfxImport` or
+  `Set-WFCertificate` removes it was not established. The endpoint keeps
+  working (TLS 1.2 / 1.3, `401` on an anonymous request, services running), but `Get-WFFarm` and
+  `Get-WFFarmStatus` run by an administrator fail with *Keyset does not exist*, because they decrypt the
+  database connection strings with that key. `CfgAppSwm` grants Read to the administrators (script run as
+  `SYSTEM`, the only account that can still read the key), and the farm existence test connects to the
+  database instead of calling `Get-WFFarm`.
 - The Default Web Site is removed because it holds port 443. The default application pools are removed too:
   on the lab server they have no application, and SPWFM creates its own pool (`WorkflowMgmt…`, running as the
   run-as account), which is not in the removal list.

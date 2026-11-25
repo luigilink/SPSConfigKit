@@ -524,8 +524,9 @@ try {
         PsDscRunAsCredential = $SETUP
         GetScript            = { return @{ Result = 'Workflow Manager farm' } }
         TestScript           = {
-          Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
-          try { $null = Get-WFFarm -WFFarmDBConnectionString $using:wfFarmDb -ErrorAction Stop; return $true } catch { return $false }
+          # Get-WFFarm decrypts with the encryption certificate, so it cannot be used as a test.
+          $connection = New-Object System.Data.SqlClient.SqlConnection $using:wfFarmDb
+          try { $connection.Open(); return $true } catch { return $false } finally { $connection.Dispose() }
         }
         SetScript            = {
           Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
@@ -593,7 +594,27 @@ try {
             Update-WFHost -WFFarmDBConnectionString $using:wfFarmDb -ErrorAction Stop
           }
         }
-        $swmCompletedDependsOn += '[Script]MIDDLEWARE_SWMSetSslCertificate'
+
+        Script MIDDLEWARE_SWMGrantSslKeyAccess {
+          DependsOn  = '[Script]MIDDLEWARE_SWMSetSslCertificate'
+          GetScript  = { return @{ Result = 'Workflow Manager SSL certificate key access' } }
+          TestScript = {
+            # The imported key has no administrators access, and Get-WFFarm needs it to decrypt.
+            $cert = Get-Item "Cert:\LocalMachine\My\$using:swmSslThumbprint"
+            $keyName = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert).Key.UniqueName
+            $keyFile = Get-ChildItem (Join-Path $env:ProgramData 'Microsoft\Crypto') -Recurse -Filter $keyName | Select-Object -First 1
+            return [bool]((Get-Acl $keyFile.FullName).Access | Where-Object { $_.AccessControlType -eq 'Allow' -and $_.IdentityReference.Value -eq 'BUILTIN\Administrators' })
+          }
+          SetScript  = {
+            $cert = Get-Item "Cert:\LocalMachine\My\$using:swmSslThumbprint"
+            $keyName = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert).Key.UniqueName
+            $keyFile = Get-ChildItem (Join-Path $env:ProgramData 'Microsoft\Crypto') -Recurse -Filter $keyName | Select-Object -First 1
+            $acl = Get-Acl $keyFile.FullName
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule('BUILTIN\Administrators', 'Read', 'Allow')))
+            Set-Acl -Path $keyFile.FullName -AclObject $acl
+          }
+        }
+        $swmCompletedDependsOn += '[Script]MIDDLEWARE_SWMGrantSslKeyAccess'
       }
 
       Log MIDDLEWARE_SWM_Completed {

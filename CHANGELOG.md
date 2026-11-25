@@ -144,6 +144,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and that site `Name`, `Url` and `ContentDatabase` values are unique, since a duplicate would break
     the DSC compilation.
 
+### Fixed
+
+- Make the non-master SharePoint servers join the farm only once the master has created it (#74)
+  - `PROCESS_SPSWaitForWebApp` was declared on the non-master nodes but no resource depended on it, so the
+    join did not wait for the master. Wiring it to `[Log]APPLICATION_SPSMaster_Completed` would have created a
+    deadlock with the search master's wait on the other search nodes (#73): that marker is the last of the
+    master configuration and needs the join to finish. The master now emits an early
+    `[Log]APPLICATION_SPSFarmCreated_Completed` right after `SPFarm APPLICATION_SpsCreateSPFarm`, and the wait,
+    renamed `PROCESS_SpsWaitForFarmCreated`, is on that marker and in the `DependsOn` of both
+    `APPLICATION_SpsJoinSPFarm` variants. Compiled on the lab with the lab `.psd1`: the only differences with
+    the published MOFs are the new `Log` on APP1 and, on APP2, WFE1 and WFE2, the renamed wait and the join
+    dependency (no other resource changes); not applied yet. On an existing farm, let the master apply the
+    new MOF first: the other nodes wait for the new marker until then.
+
 ## [1.9.0] - 2026-10-05
 
 ### Added

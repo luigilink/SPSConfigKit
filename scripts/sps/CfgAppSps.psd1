@@ -248,6 +248,17 @@
         CharacterSet   = '65001'
       }
       ServiceAppPoolName        = 'SharePointServiceApplications'
+      # SharePoint 2013 workflows: installs the Workflow Manager Client on every SharePoint server and registers the
+      # farm of the SWM server (CfgAppSwm). Disabled by default; see the wiki before enabling it.
+      Workflow                  = @{
+        Enabled         = $false
+        ServerName      = 'SWM1'
+        HostUri         = 'https://sharepoint-workflow.contoso.com:12290'
+        SiteUrl         = 'https://sharepoint.contoso.com'
+        AllowOAuthHttp  = $false
+        ClientFileName  = 'sharepointworkflowmanagerclient_x64.msi'
+        ClientProductId = '{CE257EBF-44F7-4CDD-8AB5-08DDE86FE024}'
+      }
       # Optional allowlist of Secrets.psd1 account names that SharePoint owns as Managed Accounts.
       # Defaults to @('FARM', 'IISAPP', 'SEARCH') when omitted (the historical set). Add an entry
       # here when a new SharePoint Managed Account is introduced (e.g. a dedicated Workflow or

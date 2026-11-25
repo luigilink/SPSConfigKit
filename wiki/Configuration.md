@@ -103,7 +103,8 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 > Service Bus and Service Fabric use. Those are **not** opened from memory: they will be added once
 > checked on a configured server (rules before / after the installation).
 
-The SharePoint registration is **not implemented yet**.
+The SharePoint side (client installation on the SharePoint servers and registration of the farm) is done by
+`CfgAppSps`, see [`SharePoint.Workflow`](#key-conventions).
 
 **Behaviours learned on the lab server.**
 
@@ -691,6 +692,24 @@ and is the canonical schema &mdash; treat the snippet above as a map.
   > -IncludeCentralAdministration | Format-List DisplayName, Url` and confirm the
   > IIS `SharePoint Central Administration v4` site has an `https` binding on the
   > expected port with the `SharePointAdmin` certificate and SNI enabled.
+- **`SharePoint.Workflow`** (optional, `Enabled = $false` by default) &mdash; SharePoint 2013 workflows with the
+  SWM server built by `CfgAppSwm`. When `Enabled = $true`:
+  - **every** SharePoint server installs the SharePoint Workflow Manager Client (`ClientFileName`,
+    `ClientProductId`), copied from `<SourcePath>\SWM\BIN`: Microsoft Learn requires it on each server of the
+    SharePoint farm before the registration;
+  - the SharePoint **master** node registers the farm with `SPWorkflowService` (`Register-SPWorkflowService`)
+    for the site collection `SiteUrl`, with `HostUri`, and `AllowOAuthHttp` (`$true` is required for an
+    `http` `HostUri`). It waits for `[Log]MIDDLEWARE_SWM_Completed` on `ServerName` (the SWM server, which is
+    **not** a node of this `.psd1`) and for the client installation of the other SharePoint servers; these
+    resources are in a `Node` block declared last, so the wait delays nothing else;
+  - the compilation fails with an explicit message when a setting is missing.
+
+  `HostUri` is the endpoint of the Workflow Manager farm (`Get-WFFarm | select Endpoints` on the SWM server). The
+  kit uses the DNS alias published by `CfgAppPdc`, which the endpoint certificate covers; whether
+  `Register-SPWorkflowService` accepts the alias instead of the host name is not documented. No certificate is
+  imported on the SharePoint side: Learn asks for it only when SharePoint and Workflow Manager do not share a
+  certificate authority and the farm uses self-signed certificates. `SPWorkflowService` only compares
+  `WorkflowHostUri` to decide whether it must run. Updating the client package later is not handled yet.
 - **`SharePoint.ManagedAccounts`** (optional) &mdash; allowlist of
   `Secrets.psd1` account names that SharePoint should register as
   `SPManagedAccount` resources on the farm master. Defaults to
@@ -862,6 +881,8 @@ are skipped automatically (e.g. SharePoint checks are not run against
   has a matching `Secrets.psd1` entry (drives the PFX password);
   `WebApplications[*].CertName` resolves to a known cert `Name`;
   `OOS.CertFriendlyName` resolves to a known `FriendlyName`.
+- **Workflow** &mdash; when `SharePoint.Workflow.Enabled` is `$true`, `ServerName`, `HostUri`, `SiteUrl`,
+  `ClientFileName` and `ClientProductId` are declared, and an `http` `HostUri` comes with `AllowOAuthHttp`.
 - **Managed accounts** &mdash; `SharePoint.ManagedAccounts` (or the
   default `@('FARM','IISAPP','SEARCH')` when omitted) is a subset of
   `Secrets.psd1`.

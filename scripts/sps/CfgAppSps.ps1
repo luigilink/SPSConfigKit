@@ -254,6 +254,11 @@ try {
     # legitimately omit). Mirrors the IsOOSServer gating of the OOS install Node block.
     $hasOOSNode = @($AllNodes.Where{ $_.IsOOSServer }).Count -gt 0
 
+    $swmWorkflow = $ConfigurationData.NonNodeData.SharePoint.Workflow
+    $hasWorkflow = [bool]($swmWorkflow -and $swmWorkflow.Enabled)
+    $workflowNodes = if ($hasWorkflow) { @($SPSMaster) } else { @() }
+    $spsNonMasterNodes = @($AllNodes.Where{ $_.IsSPSServer -and (-not $_.IsMaster) }.NodeName)
+
     # SharePoint <-> SQL connection encryption level applied to the SPFarm resource.
     # SharePoint Subscription Edition 25H1+ (and mandatory from the 2025-08 PU) requires
     # DatabaseConnectionEncryption to be set on SPFarm; valid values are Optional / Mandatory
@@ -307,6 +312,16 @@ try {
         throw ("NonNodeData.OOS.AllServers is missing IsOOSServer node(s): {0}. " -f ($missingOOSServers -join ', ') +
           "AllServers must list every Office Online Server node so the CU install targets the whole set. " +
           ("Declared OOS nodes: {0}. AllServers: {1}." -f ($oosNodeNames -join ', '), ($oosAllServers -join ', ')))
+      }
+    }
+
+    if ($hasWorkflow) {
+      $missingWorkflowSettings = @('ServerName', 'HostUri', 'SiteUrl', 'ClientFileName', 'ClientProductId') | Where-Object { [string]::IsNullOrWhiteSpace($swmWorkflow[$_]) }
+      if ($missingWorkflowSettings.Count -gt 0) {
+        throw ("NonNodeData.SharePoint.Workflow is enabled but these settings are missing: {0}." -f ($missingWorkflowSettings -join ', '))
+      }
+      if ($swmWorkflow.HostUri -like 'http://*' -and -not $swmWorkflow.AllowOAuthHttp) {
+        throw 'NonNodeData.SharePoint.Workflow.HostUri uses http: set AllowOAuthHttp to $true, or use https.'
       }
     }
 
@@ -625,6 +640,29 @@ try {
         #The message below gets written to the Microsoft-Windows-Desired State Configuration/Analytic log
         Message   = '[SPProductUpdate]Installation of Cumulative Update Completed'
         DependsOn = '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+      }
+
+      if ($hasWorkflow) {
+        $wfClientSource = Join-Path (Join-Path $ConfigurationData.NonNodeData.SourcePath 'SWM\BIN') $swmWorkflow.ClientFileName
+        $wfClientDestination = Join-Path (Join-Path $ConfigurationData.NonNodeData.Drives.Data 'SoftwarePackages\SWM\BIN') $swmWorkflow.ClientFileName
+        File APPLICATION_SpsWorkflowClientGetSources {
+          SourcePath      = $wfClientSource
+          DestinationPath = $wfClientDestination
+          Type            = 'File'
+          Ensure          = 'Present'
+          Credential      = $SETUP
+          MatchSource     = $true
+        }
+        MsiPackage APPLICATION_SpsWorkflowClientInstall {
+          DependsOn = '[File]APPLICATION_SpsWorkflowClientGetSources'
+          Ensure    = 'Present'
+          Path      = $wfClientDestination
+          ProductId = $swmWorkflow.ClientProductId
+        }
+        Log APPLICATION_SpsWorkflowClient_Completed {
+          Message   = '[MsiPackage]SharePoint Workflow Manager Client installed'
+          DependsOn = '[MsiPackage]APPLICATION_SpsWorkflowClientInstall'
+        }
       }
     }
     #For All SharePoint servers MASTER
@@ -1607,6 +1645,40 @@ try {
         #The message below gets written to the Microsoft-Windows-Desired State Configuration/Analytic log
         Message   = '[SPSearchServiceApp]SharePoint Search Service App Configuration Completed'
         DependsOn = '[SPSearchContentSource]APPLICATION_SpsSvcSearchContentSourceProfile'
+      }
+    }
+
+    #Workflow Manager registration, on the SharePoint master and declared last so that waiting for the SWM server delays nothing else
+    Node $workflowNodes {
+      $workflowDependsOn = @('[Log]APPLICATION_SPSMaster_Completed', '[Log]APPLICATION_SpsWorkflowClient_Completed')
+      WaitForAll PROCESS_SpsWaitForWorkflowManagerFarm {
+        PsDscRunAsCredential = $SETUP
+        ResourceName         = '[Log]MIDDLEWARE_SWM_Completed'
+        NodeName             = $swmWorkflow.ServerName
+        RetryIntervalSec     = 60
+        RetryCount           = 180
+      }
+      $workflowDependsOn += '[WaitForAll]PROCESS_SpsWaitForWorkflowManagerFarm'
+      if ($spsNonMasterNodes.Count -gt 0) {
+        WaitForAll PROCESS_SpsWaitForWorkflowClients {
+          PsDscRunAsCredential = $SETUP
+          ResourceName         = '[Log]APPLICATION_SpsWorkflowClient_Completed'
+          NodeName             = $spsNonMasterNodes
+          RetryIntervalSec     = 60
+          RetryCount           = 180
+        }
+        $workflowDependsOn += '[WaitForAll]PROCESS_SpsWaitForWorkflowClients'
+      }
+      SPWorkflowService APPLICATION_SpsWorkflowService {
+        DependsOn            = $workflowDependsOn
+        PsDscRunAsCredential = $SETUP
+        WorkflowHostUri      = $swmWorkflow.HostUri
+        SPSiteUrl            = $swmWorkflow.SiteUrl
+        AllowOAuthHttp       = [bool]$swmWorkflow.AllowOAuthHttp
+      }
+      Log APPLICATION_SpsWorkflow_Completed {
+        Message   = '[SPWorkflowService]Workflow Manager registered in the SharePoint farm'
+        DependsOn = '[SPWorkflowService]APPLICATION_SpsWorkflowService'
       }
     }
 

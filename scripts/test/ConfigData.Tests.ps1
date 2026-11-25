@@ -54,6 +54,7 @@ BeforeDiscovery {
   $hasSps = [bool]$cfg.NonNodeData.SharePoint
   $hasSearchTopology = [bool]$cfg.NonNodeData.SharePoint.Services.SearchService
   $hasOos = [bool]$cfg.NonNodeData.OOS
+  $hasWorkflow = [bool]($cfg.NonNodeData.SharePoint.Workflow -and $cfg.NonNodeData.SharePoint.Workflow.Enabled)
   # SQL *tier* detection = an actual SQL node. NonNodeData.SQL alone is NOT sufficient:
   # the SharePoint config also declares a NonNodeData.SQL block (ForceEncryption flag) so
   # it can trust the SQL certificate, but it has no IsSQLServer node and must not trigger
@@ -414,6 +415,22 @@ Describe 'SharePoint configuration' -Skip:(-not $hasSps) {
     It 'ProductKey is not the placeholder XXXXX-...' {
       $script:ConfigData.NonNodeData.SharePoint.ProductKey |
         Should -Not -Be 'XXXXX-XXXXX-XXXXX-XXXXX-XXXXX'
+    }
+  }
+
+  Context 'Workflow Manager registration' -Skip:(-not $hasWorkflow) {
+    It 'declares ServerName, HostUri, SiteUrl, ClientFileName and ClientProductId' {
+      foreach ($key in 'ServerName', 'HostUri', 'SiteUrl', 'ClientFileName', 'ClientProductId') {
+        $script:ConfigData.NonNodeData.SharePoint.Workflow[$key] | Should -Not -BeNullOrEmpty -Because "CfgAppSps.ps1 fails to compile without Workflow.$key"
+      }
+    }
+    It 'HostUri is an http(s) URL, with AllowOAuthHttp when it is http' {
+      $workflow = $script:ConfigData.NonNodeData.SharePoint.Workflow
+      $workflow.HostUri | Should -Match '^https?://'
+      if ($workflow.HostUri -like 'http://*') { $workflow.AllowOAuthHttp | Should -BeTrue }
+    }
+    It 'ClientProductId is a GUID in braces' {
+      $script:ConfigData.NonNodeData.SharePoint.Workflow.ClientProductId | Should -Match '^\{[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}$'
     }
   }
 

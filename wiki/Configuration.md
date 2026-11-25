@@ -70,7 +70,7 @@ It is built step by step and is **not complete**. For now it provides, for a nod
   `<Drives.Logs>\<NonNodeData.SWM.LogFolder>`;
 - the **Service Bus farm** (`New-SBFarm`) and this host in the farm (`Add-SBHost`), in the
   database `NonNodeData.SWM.ServiceBus.FarmDatabase`, reached through a **SQL client alias**
-  (`NonNodeData.SWM.SqlAlias`: alias, server, instance, port, the shape of `SQLAlias` in `CfgAppSps`). The
+  (the `NonNodeData.SQLAlias` entry named `WORKFLOW`: alias, server, instance, port, the shape of `SQLAlias` in `CfgAppSps`). The
   farms keep their connection strings in their management databases, so the alias lets the SQL Server
   move or change instance / port later without touching them. The certificates are
   **auto-generated** (the lab CA certificate `SharePointWorkflowCert` comes in a later step), the farm runs

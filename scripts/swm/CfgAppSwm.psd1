@@ -47,17 +47,25 @@
         }
       )
     }
-    # SharePoint Workflow Manager settings.
-    SWM         = @{
-      # HTTPS port of the Workflow Management endpoint (default documented by Microsoft Learn).
-      HttpsPort           = 12290
-      # SQL client alias used by the farms; same shape as SQLAlias in CfgAppSps.psd1.
-      SqlAlias            = @{
+    # SQL client alias used by the farms; same shape as SQLAlias in CfgAppSps.psd1.
+    SQLAlias    = @(
+      @{
+        Name         = 'WORKFLOW'
         ServerAlias  = 'SINGLE-SWM-SPSSQL'
         ServerName   = 'SQL1'
         InstanceName = 'MSSQLSERVER'
         Port         = 1433
       }
+    )
+    # IIS log folders, relative to Drives.Logs.
+    IIS         = @{
+      LogFolder     = 'LOGS\IIS'
+      httpErrFolder = 'LOGS\HTTPERR'
+    }
+    # SharePoint Workflow Manager settings.
+    SWM         = @{
+      # HTTPS port of the Workflow Management endpoint (default documented by Microsoft Learn).
+      HttpsPort           = 12290
       # ADC certificate set as the SSL certificate of the Workflow Manager farm; remove to keep the auto-generated one.
       SslCertificateName  = 'SharePointWorkflowCert'
       # Let Add-SBHost / Add-WFHost create the firewall rules of the farms.
@@ -85,11 +93,6 @@
         FileName  = 'sharepointworkflowmanager.msi'
         ProductId = '{04A7199E-565D-4654-88A3-80A9A7BADDD9}'
       }
-    }
-    # IIS log folders, relative to Drives.Logs.
-    IIS         = @{
-      LogFolder     = 'LOGS\IIS'
-      httpErrFolder = 'LOGS\HTTPERR'
     }
   }
 }

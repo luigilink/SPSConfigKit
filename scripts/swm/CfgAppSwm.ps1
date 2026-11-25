@@ -108,6 +108,7 @@ try {
 
   # Fail fast on a .psd1 that predates a setting, instead of an obscure compilation error.
   $swmSettings = $configurationData.NonNodeData.SWM
+  $swmSqlAliasSetting = $configurationData.NonNodeData.SQLAlias | Where-Object { $_.Name -eq 'WORKFLOW' } | Select-Object -First 1
   $requiredSwmSettings = @{
     'LogFolder'                    = $swmSettings.LogFolder
     'ServiceFabric.FileName'       = $swmSettings.ServiceFabric.FileName
@@ -116,10 +117,10 @@ try {
     'WorkflowClient.ProductId'     = $swmSettings.WorkflowClient.ProductId
     'WorkflowServer.FileName'      = $swmSettings.WorkflowServer.FileName
     'WorkflowServer.ProductId'     = $swmSettings.WorkflowServer.ProductId
-    'SqlAlias.ServerAlias'         = $swmSettings.SqlAlias.ServerAlias
-    'SqlAlias.ServerName'          = $swmSettings.SqlAlias.ServerName
-    'SqlAlias.InstanceName'        = $swmSettings.SqlAlias.InstanceName
-    'SqlAlias.Port'                = $swmSettings.SqlAlias.Port
+    'SQLAlias.ServerAlias'         = $swmSqlAliasSetting.ServerAlias
+    'SQLAlias.ServerName'          = $swmSqlAliasSetting.ServerName
+    'SQLAlias.InstanceName'        = $swmSqlAliasSetting.InstanceName
+    'SQLAlias.Port'                = $swmSqlAliasSetting.Port
     'ServiceBus.FarmDatabase'      = $swmSettings.ServiceBus.FarmDatabase
     'ServiceBus.Namespace'         = $swmSettings.ServiceBus.Namespace
     'WorkflowManager.FarmDatabase' = $swmSettings.WorkflowManager.FarmDatabase
@@ -410,7 +411,7 @@ try {
         LogPath   = (Join-Path $swmLogs 'SWMServerInstall.log')
       }
 
-      $swmSqlAlias = $ConfigurationData.NonNodeData.SWM.SqlAlias
+      $swmSqlAlias = $ConfigurationData.NonNodeData.SQLAlias | Where-Object { $_.Name -eq 'WORKFLOW' } | Select-Object -First 1
       SqlAlias MIDDLEWARE_SWMSqlAlias {
         Ensure            = 'Present'
         Protocol          = 'TCP'

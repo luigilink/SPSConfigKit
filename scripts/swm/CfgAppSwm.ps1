@@ -30,9 +30,9 @@
   the common hardening shared by every node of the kit, the local administrators of the SWM
   server, the IIS prerequisites (and IIS logging), the copy of the installers from the share,
   the installation of Service Fabric, the SharePoint Workflow Manager Client and SharePoint
-  Workflow Manager, the Service Bus and Workflow Manager farms, and the firewall rule of the
-  Workflow Management endpoint. The endpoint certificate and the SharePoint registration are
-  added next.
+  Workflow Manager, the Service Bus and Workflow Manager farms, the lab CA certificate of the
+  Workflow Management endpoint, and its firewall rule. The SharePoint registration is added
+  next.
 
   The role is SharePoint Workflow Manager (SWM), not the legacy Microsoft Workflow Manager,
   which is no longer installable (support ended on 14 July 2026).
@@ -108,6 +108,7 @@ try {
 
   # Fail fast on a .psd1 that predates a setting, instead of an obscure compilation error.
   $swmSettings = $configurationData.NonNodeData.SWM
+  $swmSqlAliasSetting = $configurationData.NonNodeData.SQLAlias | Where-Object { $_.Name -eq 'WORKFLOW' } | Select-Object -First 1
   $requiredSwmSettings = @{
     'LogFolder'                    = $swmSettings.LogFolder
     'ServiceFabric.FileName'       = $swmSettings.ServiceFabric.FileName
@@ -116,10 +117,10 @@ try {
     'WorkflowClient.ProductId'     = $swmSettings.WorkflowClient.ProductId
     'WorkflowServer.FileName'      = $swmSettings.WorkflowServer.FileName
     'WorkflowServer.ProductId'     = $swmSettings.WorkflowServer.ProductId
-    'SqlAlias.ServerAlias'         = $swmSettings.SqlAlias.ServerAlias
-    'SqlAlias.ServerName'          = $swmSettings.SqlAlias.ServerName
-    'SqlAlias.InstanceName'        = $swmSettings.SqlAlias.InstanceName
-    'SqlAlias.Port'                = $swmSettings.SqlAlias.Port
+    'SQLAlias.ServerAlias'         = $swmSqlAliasSetting.ServerAlias
+    'SQLAlias.ServerName'          = $swmSqlAliasSetting.ServerName
+    'SQLAlias.InstanceName'        = $swmSqlAliasSetting.InstanceName
+    'SQLAlias.Port'                = $swmSqlAliasSetting.Port
     'ServiceBus.FarmDatabase'      = $swmSettings.ServiceBus.FarmDatabase
     'ServiceBus.Namespace'         = $swmSettings.ServiceBus.Namespace
     'WorkflowManager.FarmDatabase' = $swmSettings.WorkflowManager.FarmDatabase
@@ -184,7 +185,7 @@ try {
   }
 
   # A Script resource writes its values in clear text in the MOF: the farm secrets are encrypted instead.
-  foreach ($secretName in 'SWM', 'SWMCertKey') {
+  foreach ($secretName in @('SWM', 'SWMCertKey') + @($configurationData.NonNodeData.SWM.SslCertificateName | Where-Object { $_ })) {
     if (-not (Get-Variable -Name $secretName -ErrorAction SilentlyContinue)) {
       throw "Missing '$secretName' entry in $secretsFile. Update the file from Secrets.sample.psd1."
     }
@@ -220,10 +221,39 @@ try {
     New-Item -Path $mofOutputPath -ItemType Directory | Out-Null
   }
 
+  function Get-CertThumbprint() {
+    param
+    (
+      [parameter(Mandatory = $true)]
+      [System.String]
+      $CertPath
+    )
+    try {
+      $certObject = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+      $certObject.Import($CertPath, "", 'DefaultKeySet')
+      $item = Get-Item $CertPath
+      return @{
+        Error      = $false
+        Thumbprint = $certObject.Thumbprint
+        BaseName   = $item.BaseName
+      }
+    }
+    catch {
+      Write-Warning $_.Exception.Message
+      Write-Warning "$CertPath was not found"
+      return @{
+        Error      = $true
+        Thumbprint = "0000000000000000000000000000000000000000"
+        BaseName   = "ERROR"
+      }
+    }
+  }
+
   Configuration CfgAppSwm {
     # NOTE: Module versions below MUST stay in sync with
     #       scripts/init/Initialize-DscNode.psd1 (Modules table).
     #Import the required DSC resources
+    Import-DscResource -ModuleName CertificateDsc -ModuleVersion 6.0.0
     Import-DscResource -ModuleName NetworkingDsc -ModuleVersion 9.1.0
     Import-DscResource -ModuleName PSDscResources -ModuleVersion 2.12.0.0
     Import-DscResource -ModuleName SqlServerDsc -ModuleVersion 17.5.1
@@ -409,7 +439,7 @@ try {
         LogPath   = (Join-Path $swmLogs 'SWMServerInstall.log')
       }
 
-      $swmSqlAlias = $ConfigurationData.NonNodeData.SWM.SqlAlias
+      $swmSqlAlias = $ConfigurationData.NonNodeData.SQLAlias | Where-Object { $_.Name -eq 'WORKFLOW' } | Select-Object -First 1
       SqlAlias MIDDLEWARE_SWMSqlAlias {
         Ensure            = 'Present'
         Protocol          = 'TCP'
@@ -494,8 +524,9 @@ try {
         PsDscRunAsCredential = $SETUP
         GetScript            = { return @{ Result = 'Workflow Manager farm' } }
         TestScript           = {
-          Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
-          try { $null = Get-WFFarm -WFFarmDBConnectionString $using:wfFarmDb -ErrorAction Stop; return $true } catch { return $false }
+          # Get-WFFarm decrypts with the encryption certificate, so it cannot be used as a test.
+          $connection = New-Object System.Data.SqlClient.SqlConnection $using:wfFarmDb
+          try { $connection.Open(); return $true } catch { return $false } finally { $connection.Dispose() }
         }
         SetScript            = {
           Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
@@ -524,9 +555,71 @@ try {
         }
       }
 
+      $swmCompletedDependsOn = @('[Script]MIDDLEWARE_SWMAddWorkflowHost')
+      $swmSslCertName = $ConfigurationData.NonNodeData.SWM.SslCertificateName
+      if ($swmSslCertName) {
+        $swmSslCert = $ConfigurationData.NonNodeData.ADC.certificates | Where-Object { $_.Name -eq $swmSslCertName }
+        if ($null -eq $swmSslCert) {
+          throw "NonNodeData.SWM.SslCertificateName is '$swmSslCertName' but no ADC certificate has that name in NonNodeData.ADC.certificates."
+        }
+        $swmSslCertInfo = Get-CertThumbprint -CertPath "$($swmSslCert.CertPath)"
+        if ($swmSslCertInfo.Error) {
+          throw "The certificate '$swmSslCertName' could not be read from $($swmSslCert.CertPath)."
+        }
+        $swmSslThumbprint = $swmSslCertInfo.Thumbprint
+
+        PfxImport MIDDLEWARE_SWMSslCertificateImport {
+          DependsOn  = '[Script]MIDDLEWARE_SWMAddWorkflowHost'
+          Thumbprint = $swmSslThumbprint
+          Path       = $swmSslCert.PfxPath
+          Store      = 'My'
+          Location   = 'LocalMachine'
+          Credential = (Get-Variable -Name $swmSslCertName -ValueOnly)
+          Exportable = $true
+          Ensure     = 'Present'
+        }
+
+        Script MIDDLEWARE_SWMSetSslCertificate {
+          DependsOn            = '[PfxImport]MIDDLEWARE_SWMSslCertificateImport'
+          PsDscRunAsCredential = $SETUP
+          GetScript            = { return @{ Result = 'Workflow Manager SSL certificate' } }
+          TestScript           = {
+            Import-Module WebAdministration
+            $binding = Get-WebBinding -Name 'Workflow Management Site' -Protocol https | Select-Object -First 1
+            return ($null -ne $binding -and $binding.certificateHash -eq $using:swmSslThumbprint)
+          }
+          SetScript            = {
+            Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
+            Set-WFCertificate -WFFarmDBConnectionString $using:wfFarmDb -SslCertificateThumbprint $using:swmSslThumbprint -EncryptionCertificateThumbprint $using:swmSslThumbprint -ErrorAction Stop
+            Update-WFHost -WFFarmDBConnectionString $using:wfFarmDb -ErrorAction Stop
+          }
+        }
+
+        Script MIDDLEWARE_SWMGrantSslKeyAccess {
+          DependsOn  = '[Script]MIDDLEWARE_SWMSetSslCertificate'
+          GetScript  = { return @{ Result = 'Workflow Manager SSL certificate key access' } }
+          TestScript = {
+            # The imported key has no administrators access, and Get-WFFarm needs it to decrypt.
+            $cert = Get-Item "Cert:\LocalMachine\My\$using:swmSslThumbprint"
+            $keyName = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert).Key.UniqueName
+            $keyFile = Get-ChildItem (Join-Path $env:ProgramData 'Microsoft\Crypto') -Recurse -Filter $keyName | Select-Object -First 1
+            return [bool]((Get-Acl $keyFile.FullName).Access | Where-Object { $_.AccessControlType -eq 'Allow' -and $_.IdentityReference.Value -eq 'BUILTIN\Administrators' })
+          }
+          SetScript  = {
+            $cert = Get-Item "Cert:\LocalMachine\My\$using:swmSslThumbprint"
+            $keyName = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert).Key.UniqueName
+            $keyFile = Get-ChildItem (Join-Path $env:ProgramData 'Microsoft\Crypto') -Recurse -Filter $keyName | Select-Object -First 1
+            $acl = Get-Acl $keyFile.FullName
+            $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule('BUILTIN\Administrators', 'Read', 'Allow')))
+            Set-Acl -Path $keyFile.FullName -AclObject $acl
+          }
+        }
+        $swmCompletedDependsOn += '[Script]MIDDLEWARE_SWMGrantSslKeyAccess'
+      }
+
       Log MIDDLEWARE_SWM_Completed {
         Message   = 'Finished running the SharePoint Workflow Manager farm creation and host registration'
-        DependsOn = '[Script]MIDDLEWARE_SWMAddWorkflowHost'
+        DependsOn = $swmCompletedDependsOn
       }
 
       # Only port documented by Microsoft Learn; the farm cmdlets open the Service Bus ones.

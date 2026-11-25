@@ -70,7 +70,7 @@ It is built step by step and is **not complete**. For now it provides, for a nod
   `<Drives.Logs>\<NonNodeData.SWM.LogFolder>`;
 - the **Service Bus farm** (`New-SBFarm`) and this host in the farm (`Add-SBHost`), in the
   database `NonNodeData.SWM.ServiceBus.FarmDatabase`, reached through a **SQL client alias**
-  (`NonNodeData.SWM.SqlAlias`: alias, server, instance, port, the shape of `SQLAlias` in `CfgAppSps`). The
+  (the `NonNodeData.SQLAlias` entry named `WORKFLOW`: alias, server, instance, port, the shape of `SQLAlias` in `CfgAppSps`). The
   farms keep their connection strings in their management databases, so the alias lets the SQL Server
   move or change instance / port later without touching them. The certificates are
   **auto-generated** (the lab CA certificate `SharePointWorkflowCert` comes in a later step), the farm runs
@@ -86,6 +86,14 @@ It is built step by step and is **not complete**. For now it provides, for a nod
   created because `Get-SBClientConfiguration` fails with *There are no namespaces to get client
   configuration* otherwise; its managers are the run-as account (not documented, to be confirmed). A
   `Log` named `MIDDLEWARE_SWM_Completed` marks the end, for a SharePoint node to wait for;
+- the **lab CA certificate** `SharePointWorkflowCert` (`NonNodeData.SWM.SslCertificateName`, its entry in
+  `NonNodeData.ADC.certificates` and its PFX password in `Secrets.psd1`) as the SSL certificate of the
+  Workflow Management endpoint: `PfxImport` into `LocalMachine\My`, then `Set-WFCertificate
+  -SslCertificateThumbprint -EncryptionCertificateThumbprint` (the same certificate for both) and
+  `Update-WFHost` (as the cmdlet help requires). `-SslCertificateThumbprint` alone fails with *All
+  certificates thumbprint is needed to go from generated certificates to custom certificates*. Remove
+  `SslCertificateName` to keep the auto-generated certificate. The Service Bus certificates stay
+  auto-generated;
 - an inbound **firewall rule** for the Workflow Management endpoint, on the port set by
   `NonNodeData.SWM.HttpsPort` (default **12290**, the HTTPS port documented by Microsoft Learn).
 
@@ -95,7 +103,7 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 > Service Bus and Service Fabric use. Those are **not** opened from memory: they will be added once
 > checked on a configured server (rules before / after the installation).
 
-The endpoint certificate and the SharePoint registration are **not implemented yet**.
+The SharePoint registration is **not implemented yet**.
 
 **Behaviours learned on the lab server.**
 
@@ -111,6 +119,15 @@ The endpoint certificate and the SharePoint registration are **not implemented y
   *(401) Unauthorized. Authorization failed for specified action: Manage*. Both accounts are managers of the
   namespace, and an existing namespace is updated with `Set-SBNamespace`. The host stays at
   `HostConfigurationState = Started` after the failure, and a host that is not `Completed` is retried.
+- Once the lab certificate is the farm's encryption certificate, its private key has no `BUILTIN\Administrators`
+  access (only the run-as account, `SYSTEM`, `Winmgmt` and `OWNER RIGHTS`), unlike the auto-generated
+  certificates. It was observed on the lab server after the certificate step; whether `PfxImport` or
+  `Set-WFCertificate` removes it was not established. The endpoint keeps
+  working (TLS 1.2 / 1.3, `401` on an anonymous request, services running), but `Get-WFFarm` and
+  `Get-WFFarmStatus` run by an administrator fail with *Keyset does not exist*, because they decrypt the
+  database connection strings with that key. `CfgAppSwm` grants Read to the administrators (script run as
+  `SYSTEM`, the only account that can still read the key), and the farm existence test connects to the
+  database instead of calling `Get-WFFarm`.
 - The Default Web Site is removed because it holds port 443. The default application pools are removed too:
   on the lab server they have no application, and SPWFM creates its own pool (`WorkflowMgmt…`, running as the
   run-as account), which is not in the removal list.
@@ -397,8 +414,8 @@ port 12290. For that, `CfgAppPdc.psd1` carries:
 The endpoint port is the `NonNodeData.SWM.HttpsPort` setting of `CfgAppSwm.psd1` (default
 **12290**, the documented value); 443 is to be tested on the SWM server and then set there.
 
-This only issues the certificate and publishes the name. Importing it on the SWM server, creating
-the farm and registering it in SharePoint are not automated yet.
+`CfgAppPdc` only issues the certificate and publishes the name. `CfgAppSwm` imports it and sets it as the SSL
+certificate of the Workflow Manager farm (see above); registering the farm in SharePoint is not automated yet.
 
 ## `scripts/sps/CfgAppSps.psd1`
 

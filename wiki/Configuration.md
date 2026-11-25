@@ -75,7 +75,16 @@ It is built step by step and is **not complete**. For now it provides, for a nod
   **auto-generated** (the lab CA certificate `SharePointWorkflowCert` comes in a later step), the farm runs
   as the `SWM` account, and `NonNodeData.SWM.EnableFirewallRules` (default `$true`) lets `Add-SBHost`
   create the farm firewall rules. The cmdlet help does not give the default ports: they are read on the
-  created farm. The Workflow Manager farm itself (`New-WFFarm` / `Add-WFHost`) is the next iteration;
+  created farm. Once the host is in the farm, `Add-SBHost` has created
+  the farm firewall rules (profile Any: 9354 TCP, 9355 HTTPS, 9356 Message Broker, 5671 / 5672 AMQP, 9359
+  Resource Provider, 45672) and about twenty `WindowsFabric` rules (profile Domain, cluster ports 9000-9003);
+- the **Service Bus namespace** `NonNodeData.SWM.ServiceBus.Namespace` (default `WorkflowDefaultNamespace`,
+  the name found in the SharePoint Workflow Manager binaries), the **Workflow Manager farm** (`New-WFFarm`,
+  database `NonNodeData.SWM.WorkflowManager.FarmDatabase`, HTTPS port `NonNodeData.SWM.HttpsPort`) and this
+  host in it (`Add-WFHost`, which takes the client configuration of the namespace). The namespace is
+  created because `Get-SBClientConfiguration` fails with *There are no namespaces to get client
+  configuration* otherwise; its managers are the run-as account (not documented, to be confirmed). A
+  `Log` named `MIDDLEWARE_SWM_Completed` marks the end, for a SharePoint node to wait for;
 - an inbound **firewall rule** for the Workflow Management endpoint, on the port set by
   `NonNodeData.SWM.HttpsPort` (default **12290**, the HTTPS port documented by Microsoft Learn).
 
@@ -85,8 +94,7 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 > Service Bus and Service Fabric use. Those are **not** opened from memory: they will be added once
 > checked on a configured server (rules before / after the installation).
 
-The Workflow Manager farm, the endpoint certificate and the SharePoint registration are **not
-implemented yet**.
+The endpoint certificate and the SharePoint registration are **not implemented yet**.
 
 **Secrets.** `New-SBFarm` / `Add-SBHost` need the `SWM` password and the certificate auto-generation key
 (`SWMCertKey` in `Secrets.psd1`, keep it: it is needed to add hosts later) as `SecureString`. A `Script`

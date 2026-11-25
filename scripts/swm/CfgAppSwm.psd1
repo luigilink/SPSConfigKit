@@ -57,6 +57,13 @@
       EnableFirewallRules = $true
       ServiceBus          = @{
         FarmDatabase = 'SBManagementDB'
+        # Service Bus namespace the Workflow Manager hosts connect to. WorkflowDefaultNamespace is
+        # the name the SharePoint Workflow Manager binaries use for the namespace their
+        # configuration wizard creates.
+        Namespace    = 'WorkflowDefaultNamespace'
+      }
+      WorkflowManager     = @{
+        FarmDatabase = 'WFManagementDB'
       }
       # Installation logs, relative to Drives.Logs.
       LogFolder           = 'LOGS\SWM'

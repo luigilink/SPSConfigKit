@@ -30,8 +30,9 @@
   the common hardening shared by every node of the kit, the local administrators of the SWM
   server, the IIS prerequisites (and IIS logging), the copy of the installers from the share,
   the installation of Service Fabric, the SharePoint Workflow Manager Client and SharePoint
-  Workflow Manager, the Service Bus farm, and the firewall rule of the Workflow Management
-  endpoint. The Workflow Manager farm and the endpoint certificate are added next.
+  Workflow Manager, the Service Bus and Workflow Manager farms, and the firewall rule of the
+  Workflow Management endpoint. The endpoint certificate and the SharePoint registration are
+  added next.
 
   The role is SharePoint Workflow Manager (SWM), not the legacy Microsoft Workflow Manager,
   which is no longer installable (support ended on 14 July 2026).
@@ -121,6 +122,8 @@ try {
     'SqlAlias.InstanceName'        = $swmSettings.SqlAlias.InstanceName
     'SqlAlias.Port'                = $swmSettings.SqlAlias.Port
     'ServiceBus.FarmDatabase'      = $swmSettings.ServiceBus.FarmDatabase
+    'ServiceBus.Namespace'         = $swmSettings.ServiceBus.Namespace
+    'WorkflowManager.FarmDatabase' = $swmSettings.WorkflowManager.FarmDatabase
   }
   $missingSwmSettings = @($requiredSwmSettings.Keys | Where-Object { [string]::IsNullOrWhiteSpace($requiredSwmSettings[$_]) } | Sort-Object)
   if ($missingSwmSettings.Count) {
@@ -470,6 +473,67 @@ try {
       Log MIDDLEWARE_SWMServiceBus_Completed {
         Message   = 'Finished running the Service Bus farm creation and host registration'
         DependsOn = '[Script]MIDDLEWARE_SWMAddServiceBusHost'
+      }
+
+      # Workflow Manager: the Service Bus namespace the hosts use, the farm, then this host in the
+      # farm. Add-WFHost takes the client configuration of the namespace. The namespace managers
+      # are the run-as account of the farms (not documented: to be checked on the lab server).
+      $swmNamespace = $ConfigurationData.NonNodeData.SWM.ServiceBus.Namespace
+      $wfFarmDb = 'Data Source={0};Initial Catalog={1};Integrated Security=True' -f $swmSqlAlias.ServerAlias, $ConfigurationData.NonNodeData.SWM.WorkflowManager.FarmDatabase
+      $swmHttpsPortValue = $swmHttpsPort
+
+      Script MIDDLEWARE_SWMCreateServiceBusNamespace {
+        DependsOn            = '[Script]MIDDLEWARE_SWMAddServiceBusHost'
+        PsDscRunAsCredential = $SETUP
+        GetScript            = { return @{ Result = 'Service Bus namespace' } }
+        TestScript           = {
+          Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
+          return [bool](@(Get-SBNamespace -ErrorAction Stop) | Where-Object { $_.Name -eq $using:swmNamespace })
+        }
+        SetScript            = {
+          Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
+          New-SBNamespace -Name $using:swmNamespace -AddressingScheme 'Path' -ManageUsers $using:swmRunAsAccount -ErrorAction Stop
+        }
+      }
+
+      Script MIDDLEWARE_SWMCreateWorkflowFarm {
+        DependsOn            = '[Script]MIDDLEWARE_SWMAddServiceBusHost', '[SqlAlias]MIDDLEWARE_SWMSqlAlias'
+        PsDscRunAsCredential = $SETUP
+        GetScript            = { return @{ Result = 'Workflow Manager farm' } }
+        TestScript           = {
+          Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
+          try { $null = Get-WFFarm -WFFarmDBConnectionString $using:wfFarmDb -ErrorAction Stop; return $true } catch { return $false }
+        }
+        SetScript            = {
+          Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
+          $certKey = ConvertTo-SecureString -String (Unprotect-CmsMessage -Content $using:encSwmCertKey) -AsPlainText -Force
+          New-WFFarm -WFFarmDBConnectionString $using:wfFarmDb -RunAsAccount $using:swmRunAsAccount -HttpsPort $using:swmHttpsPortValue -CertificateAutoGenerationKey $certKey -ErrorAction Stop
+        }
+      }
+
+      Script MIDDLEWARE_SWMAddWorkflowHost {
+        DependsOn            = '[Script]MIDDLEWARE_SWMCreateWorkflowFarm', '[Script]MIDDLEWARE_SWMCreateServiceBusNamespace'
+        PsDscRunAsCredential = $SETUP
+        GetScript            = { return @{ Result = 'Workflow Manager host' } }
+        TestScript           = {
+          # HostConfigurationState is the value the SPWFM installer reads ('NotStarted' = not in a farm).
+          $key = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Workflow Manager\1.0' -ErrorAction SilentlyContinue
+          $state = if ($key) { $key.PSObject.Properties['HostConfigurationState'] }
+          return ($null -ne $state -and $state.Value -ne 'NotStarted')
+        }
+        SetScript            = {
+          Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
+          Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
+          $password = ConvertTo-SecureString -String (Unprotect-CmsMessage -Content $using:encSwmPassword) -AsPlainText -Force
+          $sbClientConfiguration = Get-SBClientConfiguration -Namespaces $using:swmNamespace -ErrorAction Stop
+          Add-WFHost -WFFarmDBConnectionString $using:wfFarmDb -RunAsPassword $password -SBClientConfiguration $sbClientConfiguration -EnableFirewallRules $using:swmEnableFirewall -ErrorAction Stop
+        }
+      }
+
+      # Marker a SharePoint node can wait for before registering the workflow service.
+      Log MIDDLEWARE_SWM_Completed {
+        Message   = 'Finished running the SharePoint Workflow Manager farm creation and host registration'
+        DependsOn = '[Script]MIDDLEWARE_SWMAddWorkflowHost'
       }
 
       # Inbound rule for the Workflow Management endpoint (HTTPS 12290 by default). It is the only

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Create the Service Bus farm in `CfgAppSwm`, with secrets encrypted for the DSC certificate (#108)
+- Create the Service Bus and Workflow Manager farms in `CfgAppSwm`, with secrets encrypted for the DSC certificate (#108)
   - `CfgAppSwm` now creates the Service Bus farm (`New-SBFarm`) and adds the SWM server to it
     (`Add-SBHost`), as the setup account, with auto-generated certificates (the lab CA certificate is
     a later step). The farms reach SQL through a SQL client alias (`SqlAlias` resource, as `CfgAppSps`
@@ -17,8 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     entry in `Secrets.sample.psd1`) are encrypted at compile time with the DSC encryption certificate and
     decrypted by the `Script` resources, because a `Script` resource writes the values it uses in clear
     text in the MOF. The script fails fast when the secrets or the DSC certificate are missing. Compiled
-    on the lab SWM server with fake secrets (no secret in clear text in the MOF); not applied yet. The
-    Workflow Manager farm is the next iteration.
+    on the lab SWM server with fake secrets (no secret in clear text in the MOF). The Service Bus farm was
+    applied on the lab (farm and host completed, services running as the run-as account, firewall rules
+    created by `Add-SBHost`). The Service Bus namespace (`WorkflowDefaultNamespace`), `New-WFFarm` and
+    `Add-WFHost` are compiled but not applied yet; a `Log` `MIDDLEWARE_SWM_Completed` marks the end.
 
 - Install Service Fabric, the SharePoint Workflow Manager Client and SharePoint Workflow Manager in `CfgAppSwm` (#106)
   - `CfgAppSwm` now installs, in the order the installers require, the Azure Service Fabric Runtime

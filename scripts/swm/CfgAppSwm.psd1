@@ -39,27 +39,20 @@
     )
     # SharePoint Workflow Manager settings.
     SWM         = @{
-      # HTTPS port of the Workflow Management endpoint (opened in the firewall, and used by the farm
-      # creation). 12290 is the default documented by Microsoft Learn.
+      # HTTPS port of the Workflow Management endpoint (default documented by Microsoft Learn).
       HttpsPort           = 12290
-      # SQL client alias used by the farms to reach the SQL Server hosting their databases (the
-      # setup account must be sysadmin on it). The farms store the connection strings in their
-      # management databases, so the alias lets the SQL Server move or change instance / port later
-      # without touching the farms. Same shape as SQLAlias in CfgAppSps.psd1.
+      # SQL client alias used by the farms; same shape as SQLAlias in CfgAppSps.psd1.
       SqlAlias            = @{
         ServerAlias  = 'SINGLE-SWM-SPSSQL'
         ServerName   = 'SQL1'
         InstanceName = 'MSSQLSERVER'
         Port         = 1433
       }
-      # Let Add-SBHost / Add-WFHost create the Windows Firewall rules of the farms. The ports are
-      # not given by the cmdlet help: read them on the created farm.
+      # Let Add-SBHost / Add-WFHost create the firewall rules of the farms.
       EnableFirewallRules = $true
       ServiceBus          = @{
         FarmDatabase = 'SBManagementDB'
-        # Service Bus namespace the Workflow Manager hosts connect to. WorkflowDefaultNamespace is
-        # the name the SharePoint Workflow Manager binaries use for the namespace their
-        # configuration wizard creates.
+        # Name used by the SPWFM configuration wizard.
         Namespace    = 'WorkflowDefaultNamespace'
       }
       WorkflowManager     = @{
@@ -67,12 +60,9 @@
       }
       # Installation logs, relative to Drives.Logs.
       LogFolder           = 'LOGS\SWM'
-      # Installers, relative to <Drives.Data>\SoftwarePackages\SWM\BIN (staged from the share by
-      # Initialize-SoftwarePackages). The MSI ProductId changes with every version: read it with
-      # the Windows Installer API (Property table) when a package is updated.
+      # Installers, relative to <Drives.Data>\SoftwarePackages\SWM\BIN. The MSI ProductId changes with every version.
       ServiceFabric       = @{
         FileName       = 'ServiceFabric\MicrosoftServiceFabric.9.1.1583.9590.exe'
-        # Minimum version documented by Microsoft Learn for SharePoint Workflow Manager.
         MinimumVersion = '9.1.1583.9590'
       }
       WorkflowClient      = @{

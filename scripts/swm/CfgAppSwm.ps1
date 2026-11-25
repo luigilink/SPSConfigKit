@@ -106,8 +106,7 @@ try {
     throw "No node carries IsSWMServer = `$True in $inputFile. Declare the SharePoint Workflow Manager node."
   }
 
-  # Fail fast on a ConfigurationData that predates a setting: an empty value would otherwise give
-  # an obscure compilation error (for example two MsiPackage resources with the same key).
+  # Fail fast on a .psd1 that predates a setting, instead of an obscure compilation error.
   $swmSettings = $configurationData.NonNodeData.SWM
   $requiredSwmSettings = @{
     'LogFolder'                    = $swmSettings.LogFolder
@@ -184,9 +183,7 @@ try {
     throw "Missing $secretsFile"
   }
 
-  # The farm cmdlets need the run-as password and the certificate auto-generation key as
-  # SecureString. They are encrypted at compile time with the DSC encryption certificate, so
-  # neither of them is written in clear text in the MOF (see Protect-SwmSecret).
+  # A Script resource writes its values in clear text in the MOF: the farm secrets are encrypted instead.
   foreach ($secretName in 'SWM', 'SWMCertKey') {
     if (-not (Get-Variable -Name $secretName -ErrorAction SilentlyContinue)) {
       throw "Missing '$secretName' entry in $secretsFile. Update the file from Secrets.sample.psd1."
@@ -232,9 +229,6 @@ try {
     Import-DscResource -ModuleName SqlServerDsc -ModuleVersion 17.5.1
     Import-DscResource -ModuleName WebAdministrationDsc -ModuleVersion 4.2.1
 
-    # HTTPS port of the Workflow Management endpoint. 12290 is the default documented by
-    # Microsoft Learn; override it with NonNodeData.SWM.HttpsPort (the same value must be used
-    # when the farm is created).
     $swmHttpsPort = if ($ConfigurationData.NonNodeData.SWM.HttpsPort) { [int]$ConfigurationData.NonNodeData.SWM.HttpsPort } else { 12290 }
 
     #For All servers
@@ -282,9 +276,7 @@ try {
 
     #For all servers with the SharePoint Workflow Manager role
     Node $AllNodes.Where{ $_.IsSWMServer }.Nodename {
-      # Add the setup account and the SWM service account to the local Administrators group,
-      # so the Windows-level resources of the next steps can run. Same pattern as the Office
-      # Online Server block of CfgAppSps (the domain join is done by Add-DscNodeToDomain.ps1).
+      # Same pattern as the Office Online Server block of CfgAppSps.
       Group MIDDLEWARE_AddSWMAccountsToAdminGroup {
         GroupName            = 'Administrators'
         Ensure               = 'Present'
@@ -293,9 +285,7 @@ try {
         PsDscRunAsCredential = $ADSETUP
       }
 
-      # IIS prerequisites documented for SharePoint Workflow Manager (Web Server, Windows
-      # Authentication, .NET Extensibility 4.7, ASP.NET 4.7), plus the IIS management tools
-      # to bind the endpoint certificate in IIS Manager.
+      # Documented IIS prerequisites, plus the management tools to bind the endpoint certificate.
       $requiredFeatures = @(
         'Web-Server', 'Web-Windows-Auth', 'Web-Net-Ext45', 'Web-Asp-Net45',
         'Web-Mgmt-Tools', 'Web-Mgmt-Console'
@@ -310,8 +300,7 @@ try {
         return "[WindowsFeature]WindowsFeature-$_"
       }
 
-      # Remove the Default Web Site (it holds port 443). The default application pools are kept:
-      # nothing documents whether SharePoint Workflow Manager relies on them.
+      # Frees port 443; the default application pools are kept (SPWFM may rely on them).
       WebSite MIDDLEWARE_RemoveDefaultWebSite {
         DependsOn    = $prereqDependencies
         Ensure       = 'Absent'
@@ -347,7 +336,6 @@ try {
         Ensure    = 'Present'
       }
 
-      # Get the SWM installation files: <SourcePath>\SWM -> <Drives.Data>\SoftwarePackages\SWM
       $swmDestination = Join-Path (Join-Path $ConfigurationData.NonNodeData.Drives.Data 'SoftwarePackages') 'SWM'
       File MIDDLEWARE_SWMGetSources {
         SourcePath      = (Join-Path $ConfigurationData.NonNodeData.SourcePath 'SWM')
@@ -364,9 +352,7 @@ try {
         DependsOn = '[File]MIDDLEWARE_SWMGetSources'
       }
 
-      # Install order required by the installers: Azure Service Fabric (documented prerequisite of
-      # SharePoint Workflow Manager), then the Client (a launch condition of the SPWFM MSI), then
-      # SharePoint Workflow Manager (which also installs Service Bus 1.1).
+      # Order required by the installers: Service Fabric, then the Client, then SPWFM.
       $swmBin = Join-Path $swmDestination 'BIN'
       $swmLogs = Join-Path $ConfigurationData.NonNodeData.Drives.Logs $ConfigurationData.NonNodeData.SWM.LogFolder
       $serviceFabricSetup = Join-Path $swmBin $ConfigurationData.NonNodeData.SWM.ServiceFabric.FileName
@@ -383,7 +369,7 @@ try {
         GetScript  = { return @{ Result = 'Azure Service Fabric Runtime' } }
         TestScript = {
           $keys = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
-          # The LCM runs the script in strict mode, and many Uninstall keys have no DisplayName.
+          # The LCM runs the script in strict mode: some Uninstall keys have no DisplayName.
           $installed = Get-ItemProperty -Path $keys -ErrorAction SilentlyContinue |
             Where-Object { $_.PSObject.Properties['DisplayName'] -and $_.PSObject.Properties['DisplayVersion'] -and $_.DisplayName -like '*Service Fabric*' }
           foreach ($entry in $installed) {
@@ -394,7 +380,7 @@ try {
         }
         SetScript  = {
           $process = Start-Process -FilePath $using:serviceFabricSetup -ArgumentList '/accepteula' -Wait -PassThru
-          # 3010 = success, restart required: let the LCM restart the node.
+          # 3010 = restart required, left to the LCM.
           if ($process.ExitCode -eq 3010) { $global:DSCMachineStatus = 1 }
           elseif ($process.ExitCode -ne 0) { throw "Azure Service Fabric setup failed with exit code $($process.ExitCode)." }
         }
@@ -416,12 +402,6 @@ try {
         LogPath   = (Join-Path $swmLogs 'SWMServerInstall.log')
       }
 
-      # Service Bus farm, then this host in the farm. The certificates are auto-generated (the
-      # lab CA certificate comes in a later step). The cmdlets run as the setup account, which is
-      # sysadmin on the SQL Server and local administrator. The run-as password and the
-      # certificate key are encrypted for the DSC certificate and decrypted inside the Script.
-      # The default Service Bus ports are not set: they are read on the created farm.
-      # The farms reach the SQL Server through a SQL client alias, as SharePoint does.
       $swmSqlAlias = $ConfigurationData.NonNodeData.SWM.SqlAlias
       SqlAlias MIDDLEWARE_SWMSqlAlias {
         Ensure            = 'Present'
@@ -457,7 +437,7 @@ try {
         PsDscRunAsCredential = $SETUP
         GetScript            = { return @{ Result = 'Service Bus host' } }
         TestScript           = {
-          # HostConfigurationState is the value the SPWFM installer reads ('NotStarted' = not in a farm).
+          # 'NotStarted' = not in a farm (value read by the SPWFM installer).
           $key = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Service Bus\1.1' -ErrorAction SilentlyContinue
           $state = if ($key) { $key.PSObject.Properties['HostConfigurationState'] }
           return ($null -ne $state -and $state.Value -ne 'NotStarted')
@@ -475,9 +455,6 @@ try {
         DependsOn = '[Script]MIDDLEWARE_SWMAddServiceBusHost'
       }
 
-      # Workflow Manager: the Service Bus namespace the hosts use, the farm, then this host in the
-      # farm. Add-WFHost takes the client configuration of the namespace. The namespace managers
-      # are the run-as account of the farms (not documented: to be checked on the lab server).
       $swmNamespace = $ConfigurationData.NonNodeData.SWM.ServiceBus.Namespace
       $wfFarmDb = 'Data Source={0};Initial Catalog={1};Integrated Security=True' -f $swmSqlAlias.ServerAlias, $ConfigurationData.NonNodeData.SWM.WorkflowManager.FarmDatabase
       $swmHttpsPortValue = $swmHttpsPort
@@ -516,7 +493,7 @@ try {
         PsDscRunAsCredential = $SETUP
         GetScript            = { return @{ Result = 'Workflow Manager host' } }
         TestScript           = {
-          # HostConfigurationState is the value the SPWFM installer reads ('NotStarted' = not in a farm).
+          # 'NotStarted' = not in a farm (value read by the SPWFM installer).
           $key = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Workflow Manager\1.0' -ErrorAction SilentlyContinue
           $state = if ($key) { $key.PSObject.Properties['HostConfigurationState'] }
           return ($null -ne $state -and $state.Value -ne 'NotStarted')
@@ -525,20 +502,19 @@ try {
           Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
           Import-Module (Join-Path $env:ProgramFiles 'Workflow Manager\1.0\WorkflowManager\WorkflowManager.psd1')
           $password = ConvertTo-SecureString -String (Unprotect-CmsMessage -Content $using:encSwmPassword) -AsPlainText -Force
+          # Mandatory but not listed by Get-Command: without it the cmdlet prompts, which DSC refuses.
+          $certKey = ConvertTo-SecureString -String (Unprotect-CmsMessage -Content $using:encSwmCertKey) -AsPlainText -Force
           $sbClientConfiguration = Get-SBClientConfiguration -Namespaces $using:swmNamespace -ErrorAction Stop
-          Add-WFHost -WFFarmDBConnectionString $using:wfFarmDb -RunAsPassword $password -SBClientConfiguration $sbClientConfiguration -EnableFirewallRules $using:swmEnableFirewall -ErrorAction Stop
+          Add-WFHost -WFFarmDBConnectionString $using:wfFarmDb -RunAsPassword $password -SBClientConfiguration $sbClientConfiguration -EnableFirewallRules $using:swmEnableFirewall -CertificateAutoGenerationKey $certKey -ErrorAction Stop
         }
       }
 
-      # Marker a SharePoint node can wait for before registering the workflow service.
       Log MIDDLEWARE_SWM_Completed {
         Message   = 'Finished running the SharePoint Workflow Manager farm creation and host registration'
         DependsOn = '[Script]MIDDLEWARE_SWMAddWorkflowHost'
       }
 
-      # Inbound rule for the Workflow Management endpoint (HTTPS 12290 by default). It is the only
-      # port Microsoft Learn documents for SharePoint Workflow Manager; the other ports (Service
-      # Bus, Service Fabric) are added once they are verified on a configured server.
+      # Only port documented by Microsoft Learn; the farm cmdlets open the Service Bus ones.
       Firewall MIDDLEWARE_SWMHttpsFirewallRule {
         Name        = 'SWM-Workflow-HTTPS-TCP-In'
         DisplayName = 'SharePoint Workflow Manager (HTTPS TCP-In)'

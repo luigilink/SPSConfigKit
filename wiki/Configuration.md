@@ -96,6 +96,20 @@ It is built step by step and is **not complete**. For now it provides, for a nod
 
 The endpoint certificate and the SharePoint registration are **not implemented yet**.
 
+**Behaviours learned on the lab server.**
+
+- The LCM runs the `TestScript` of a `Script` resource in strict mode: reading a missing property (for
+  example `DisplayName` on an Uninstall registry key) throws. The Service Fabric detection tests the
+  property first.
+- A cmdlet that prompts fails under DSC (*does not support execution of commands in an interactive mode*).
+  `Add-WFHost` needs `-CertificateAutoGenerationKey` for a farm with auto-generated certificates: the cmdlet
+  help marks it mandatory, but `Get-Command` does not list it.
+- A Service Bus namespace must exist before `Add-WFHost` (`Get-SBClientConfiguration` fails with *There are
+  no namespaces to get client configuration*). The namespace managers are the run-as account, which is not
+  documented and still to be confirmed.
+- The Default Web Site is removed because it holds port 443. The default application pools are kept, as it is
+  not documented whether SPWFM relies on them.
+
 **Secrets.** `New-SBFarm` / `Add-SBHost` need the `SWM` password and the certificate auto-generation key
 (`SWMCertKey` in `Secrets.psd1`, keep it: it is needed to add hosts later) as `SecureString`. A `Script`
 resource copies the values it uses in **clear text** into the MOF, and DSC only encrypts `PSCredential`

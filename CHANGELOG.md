@@ -20,7 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     on the lab SWM server with fake secrets (no secret in clear text in the MOF). The Service Bus farm was
     applied on the lab (farm and host completed, services running as the run-as account, firewall rules
     created by `Add-SBHost`). The Service Bus namespace (`WorkflowDefaultNamespace`), `New-WFFarm` and
-    `Add-WFHost` are compiled but not applied yet; a `Log` `MIDDLEWARE_SWM_Completed` marks the end.
+    `Add-WFHost` are compiled; the first apply of `Add-WFHost` failed because the cmdlet prompts for the mandatory
+    `-CertificateAutoGenerationKey` (not listed by `Get-Command`), which is now passed. A `Log`
+    `MIDDLEWARE_SWM_Completed` marks the end.
 
 - Install Service Fabric, the SharePoint Workflow Manager Client and SharePoint Workflow Manager in `CfgAppSwm` (#106)
   - `CfgAppSwm` now installs, in the order the installers require, the Azure Service Fabric Runtime

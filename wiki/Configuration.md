@@ -40,14 +40,13 @@ scripts/
 └── sql/                        ← REFERENCE EXAMPLE — not for production
 ```
 
-### `scripts/swm/CfgAppSwm` (work in progress)
+### `scripts/swm/CfgAppSwm`
 
 `CfgAppSwm` configures the dedicated **SharePoint Workflow Manager (SWM)** server, the workflow
 engine used by SharePoint 2013 workflows. The name is **SWM**, not WFM: the legacy Microsoft
 Workflow Manager is no longer installable and its support ended on 14 July 2026.
 
-It is built step by step and is **not complete**. For now it provides, for a node carrying the
-`IsSWMServer` role flag:
+For a node carrying the `IsSWMServer` role flag, it provides:
 
 - the Local Configuration Manager block and the hardening shared by every node of the kit
   (services, firewall rules);
@@ -141,8 +140,24 @@ properties. So `CfgAppSwm` encrypts both secrets at compile time with the DSC en
 `Script` decrypts them with `Unprotect-CmsMessage`, run by the setup account (local administrator, so it
 can read the private key). The compilation fails with an explicit message when `SWM`, `SWMCertKey` or the
 DSC certificate is missing: run `Initialize-DscEncryption.ps1` first.
-During development it is applied in push mode, and switching it to pull mode is planned for the end.
-In push mode, apply the Local Configuration Manager settings **first**, because
+**Deployment in pull mode.** Like the other nodes of the kit, the SWM server is meant to run in pull mode
+(`Initialize-DscNode.ps1`, `Initialize-DscEncryption.ps1` and `Initialize-DscDisks.ps1` first, as for any node):
+
+1. Compile on the SWM server: `.\CfgAppSwm.ps1`.
+2. Publish the modules the configuration imports on the pull server (`CertificateDsc`, `NetworkingDsc`,
+   `PSDscResources`, `SqlServerDsc`, `WebAdministrationDsc`):
+   `.\Publish-SPSPullModules.ps1 -ConfigurationScriptPath ..\swm\CfgAppSwm.ps1`.
+3. Publish `<NodeName>.mof` and `<NodeName>.mof.checksum` in the `Configuration` folder of the pull server.
+4. Register the LCM: `.\CfgLcmPull.ps1 -DomainDefaultsPath .\CfgLcmPull.DomainDefaults.psd1 -UpdateNow`.
+
+See [`scripts/pull/README.md`](https://github.com/luigilink/SPSConfigKit/blob/main/scripts/pull/README.md). Checked on the lab: the 41 resources
+of the compiled MOF were tested in the desired state before the switch (`Test-DscConfiguration
+-ReferenceConfiguration`), the first pull produced an `Initial` report with 41 resources in state and 0 drifted,
+and the compliance dashboard shows the node as compliant. `CfgLcmPull.ps1` clears the DSC configuration cache
+and sets `ApplyAndMonitor`: the `ApplyOnly` mode of the `LocalConfigurationManager` block of `CfgAppSwm` only
+applies when the configuration is pushed.
+
+**Push mode (debugging).** Apply the Local Configuration Manager settings **first**, because
 `Start-DscConfiguration` does not apply the `<node>.meta.mof`: without it the LCM has no
 `CertificateID` and cannot decrypt the credentials of a MOF compiled with encryption (the
 `Initialize-DscEncryption.ps1` default).

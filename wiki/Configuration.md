@@ -106,8 +106,11 @@ The endpoint certificate and the SharePoint registration are **not implemented y
   `Add-WFHost` needs `-CertificateAutoGenerationKey` for a farm with auto-generated certificates: the cmdlet
   help marks it mandatory, but `Get-Command` does not list it.
 - A Service Bus namespace must exist before `Add-WFHost` (`Get-SBClientConfiguration` fails with *There are
-  no namespaces to get client configuration*). The namespace managers are the run-as account, which is not
-  documented and still to be confirmed.
+  no namespaces to get client configuration*). `Add-WFHost` runs as the setup account and creates Service Bus
+  entities (`WF_Management/WFTOPIC`) in it: with only the run-as account as manager it fails with
+  *(401) Unauthorized. Authorization failed for specified action: Manage*. Both accounts are managers of the
+  namespace, and an existing namespace is updated with `Set-SBNamespace`. The host stays at
+  `HostConfigurationState = Started` after the failure, and a host that is not `Completed` is retried.
 - The Default Web Site is removed because it holds port 443. The default application pools are removed too:
   on the lab server they have no application, and SPWFM creates its own pool (`WorkflowMgmt…`, running as the
   run-as account), which is not in the removal list.

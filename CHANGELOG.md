@@ -23,7 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     applied on the lab (farm and host completed, services running as the run-as account, firewall rules
     created by `Add-SBHost`). The Service Bus namespace (`WorkflowDefaultNamespace`), `New-WFFarm` and
     `Add-WFHost` are compiled; the first apply of `Add-WFHost` failed because the cmdlet prompts for the mandatory
-    `-CertificateAutoGenerationKey` (not listed by `Get-Command`), which is now passed. A `Log`
+    `-CertificateAutoGenerationKey` (not listed by `Get-Command`), which is now passed. The second one failed
+    with a 401 *Manage* error from Service Bus: the setup account that runs `Add-WFHost` was not a manager
+    of the namespace, so it is added (`Set-SBNamespace` on an existing namespace), and the host tests wait
+    for `HostConfigurationState = Completed`. A `Log`
     `MIDDLEWARE_SWM_Completed` marks the end.
 
 - Install Service Fabric, the SharePoint Workflow Manager Client and SharePoint Workflow Manager in `CfgAppSwm` (#106)

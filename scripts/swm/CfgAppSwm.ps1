@@ -444,10 +444,9 @@ try {
         PsDscRunAsCredential = $SETUP
         GetScript            = { return @{ Result = 'Service Bus host' } }
         TestScript           = {
-          # 'NotStarted' = not in a farm (value read by the SPWFM installer).
           $key = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Service Bus\1.1' -ErrorAction SilentlyContinue
           $state = if ($key) { $key.PSObject.Properties['HostConfigurationState'] }
-          return ($null -ne $state -and $state.Value -ne 'NotStarted')
+          return ($null -ne $state -and $state.Value -eq 'Completed')
         }
         SetScript            = {
           Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
@@ -465,6 +464,7 @@ try {
       $swmNamespace = $ConfigurationData.NonNodeData.SWM.ServiceBus.Namespace
       $wfFarmDb = 'Data Source={0};Initial Catalog={1};Integrated Security=True' -f $swmSqlAlias.ServerAlias, $ConfigurationData.NonNodeData.SWM.WorkflowManager.FarmDatabase
       $swmHttpsPortValue = $swmHttpsPort
+      $swmSetupAccount = $SETUP.UserName
 
       Script MIDDLEWARE_SWMCreateServiceBusNamespace {
         DependsOn            = '[Script]MIDDLEWARE_SWMAddServiceBusHost'
@@ -472,11 +472,20 @@ try {
         GetScript            = { return @{ Result = 'Service Bus namespace' } }
         TestScript           = {
           Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
-          return [bool](@(Get-SBNamespace -ErrorAction Stop) | Where-Object { $_.Name -eq $using:swmNamespace })
+          $namespace = @(Get-SBNamespace -ErrorAction Stop) | Where-Object { $_.Name -eq $using:swmNamespace } | Select-Object -First 1
+          if (-not $namespace) { return $false }
+          $setupName = ($using:swmSetupAccount -split '\\')[-1]
+          return [bool](@($namespace.ManageUsers) | Where-Object { $_ -like "$setupName@*" -or $_ -like "*\$setupName" })
         }
         SetScript            = {
           Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')
-          New-SBNamespace -Name $using:swmNamespace -AddressingScheme 'Path' -ManageUsers $using:swmRunAsAccount -ErrorAction Stop
+          $managers = @($using:swmRunAsAccount, $using:swmSetupAccount)
+          if (@(Get-SBNamespace -ErrorAction Stop) | Where-Object { $_.Name -eq $using:swmNamespace }) {
+            Set-SBNamespace -Name $using:swmNamespace -ManageUsers $managers -ErrorAction Stop
+          }
+          else {
+            New-SBNamespace -Name $using:swmNamespace -AddressingScheme 'Path' -ManageUsers $managers -ErrorAction Stop
+          }
         }
       }
 
@@ -500,10 +509,9 @@ try {
         PsDscRunAsCredential = $SETUP
         GetScript            = { return @{ Result = 'Workflow Manager host' } }
         TestScript           = {
-          # 'NotStarted' = not in a farm (value read by the SPWFM installer).
           $key = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Workflow Manager\1.0' -ErrorAction SilentlyContinue
           $state = if ($key) { $key.PSObject.Properties['HostConfigurationState'] }
-          return ($null -ne $state -and $state.Value -ne 'NotStarted')
+          return ($null -ne $state -and $state.Value -eq 'Completed')
         }
         SetScript            = {
           Import-Module (Join-Path $env:ProgramFiles 'Service Bus\1.1\ServiceBus\ServiceBus.psd1')

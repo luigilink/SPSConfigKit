@@ -37,6 +37,16 @@
       @{ Id = '2'; Letter = 'F'; Type = 'Data'; FSLabel = 'DATA'  ; AllocationUnitSize = 64KB }
       @{ Id = '3'; Letter = 'G'; Type = 'Logs'; FSLabel = 'LOGS'  ; AllocationUnitSize = 64KB }
     )
+    ADC         = @{
+      certificates = @(
+        @{
+          Name         = 'SharePointWorkflowCert'
+          FriendlyName = 'SharePointWorkflow'
+          CerFileName  = 'SharePointWorkflow.cer'
+          PfxFileName  = 'SharePointWorkflow.pfx'
+        }
+      )
+    }
     # SharePoint Workflow Manager settings.
     SWM         = @{
       # HTTPS port of the Workflow Management endpoint (default documented by Microsoft Learn).
@@ -75,15 +85,6 @@
         FileName  = 'sharepointworkflowmanager.msi'
         ProductId = '{04A7199E-565D-4654-88A3-80A9A7BADDD9}'
       }
-    }
-    ADC         = @{
-      certificates = @(
-        @{
-          Name         = 'SharePointWorkflowCert'
-          CerFileName  = 'SharePointWorkflow.cer'
-          PfxFileName  = 'SharePointWorkflow.pfx'
-        }
-      )
     }
     # IIS log folders, relative to Drives.Logs.
     IIS         = @{

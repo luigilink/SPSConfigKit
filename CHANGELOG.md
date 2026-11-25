@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Install the SharePoint Workflow Manager Client and register the Workflow Manager farm in `CfgAppSps` (#112)
+  - New optional `NonNodeData.SharePoint.Workflow` block (`Enabled = $false` by default: nothing changes
+    unless it is enabled). When enabled, every SharePoint server installs the SharePoint Workflow Manager
+    Client (copied from `<SourcePath>\SWM\BIN`, `MsiPackage`), and the SharePoint master registers the farm of
+    the SWM server with `SPWorkflowService` for the given site collection. It waits for
+    `[Log]MIDDLEWARE_SWM_Completed` of the SWM server and for the client installation of the other SharePoint
+    servers, in a `Node` block declared last so the wait delays nothing else. The compilation fails when a
+    setting is missing or when an `http` `HostUri` has no `AllowOAuthHttp`. The configuration test checks
+    the block. Compiled on the lab server with the feature disabled (no Workflow resource in any MOF) and
+    enabled (client on the three SharePoint servers, registration and waits on the master only); not applied
+    yet. Updating the client package is not handled yet.
+
 - Use the lab CA certificate on the Workflow Manager endpoint in `CfgAppSwm` (#110)
   - `CfgAppSwm` imports `SharePointWorkflowCert` into `LocalMachine\My` (`PfxImport`, PFX password from the
     `Secrets.psd1` entry of the same name) and sets it as the SSL certificate of the Workflow Manager farm

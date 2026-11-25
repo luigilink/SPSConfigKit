@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Run the SWM server in pull mode and document the deployment (#114)
+  - The SWM server, developed in push mode, now runs in pull mode like the other nodes: modules already
+    published on the pull server, `SWM1.mof` and its checksum published, LCM registered with `CfgLcmPull.ps1`.
+    The 41 resources of the MOF were tested in the desired state beforehand, the first pull reported 41
+    resources in state and 0 drifted, and the compliance dashboard shows the node as compliant. The wiki
+    describes the pull deployment of `CfgAppSwm` (the push procedure stays for debugging) and no longer
+    calls it a work in progress. Documentation only. The wait of the SharePoint master on the SWM marker
+    (#112), now between two pull-mode nodes, is not tested yet.
+
 - Install the SharePoint Workflow Manager Client and register the Workflow Manager farm in `CfgAppSps` (#112)
   - New optional `NonNodeData.SharePoint.Workflow` block (`Enabled = $false` by default: nothing changes
     unless it is enabled). When enabled, every SharePoint server installs the SharePoint Workflow Manager

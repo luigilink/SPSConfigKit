@@ -733,6 +733,11 @@ try {
           DatabaseServerCertificateHostName = $sqlDbCertHostName
         }
       }
+      # Early marker for the non-master join; SPSMaster_Completed is too late (it waits for the join, see #74).
+      Log APPLICATION_SPSFarmCreated_Completed {
+        Message   = '[SPFarm]SharePoint Farm Created'
+        DependsOn = '[SPFarm]APPLICATION_SpsCreateSPFarm'
+      }
       # Add SharePoint Managed Account.
       # Allowlist of Secrets.psd1 entries that SharePoint owns as Managed Accounts.
       # The list is read from NonNodeData.SharePoint.ManagedAccounts so customers can extend
@@ -1416,13 +1421,13 @@ try {
     # Using `-not $_.IsMaster` rather than `$_.IsMaster -eq $false`, because `$null -eq $false` is
     # $False in PowerShell, so the old form would silently drop nodes whose IsMaster key is missing.
     Node $AllNodes.Where{ ($_.IsSPSServer) -and (-not $_.IsMaster) }.NodeName {
-      # Wait for the Master SharePoint server to complete configuration before configuring Search Service Application on Search Master
-      WaitForAll PROCESS_SPSWaitForWebApp {
-          PsDscRunAsCredential = $SETUP
-          ResourceName         = '[Log]APPLICATION_SPSMaster_Completed'
-          NodeName             = $SPSMaster
-          RetryIntervalSec     = 60
-          RetryCount           = 180
+      # Join only once the master has created the farm; waiting for SPSMaster_Completed would deadlock with the search topology wait (#74).
+      WaitForAll PROCESS_SpsWaitForFarmCreated {
+        PsDscRunAsCredential = $SETUP
+        ResourceName         = '[Log]APPLICATION_SPSFarmCreated_Completed'
+        NodeName             = $SPSMaster
+        RetryIntervalSec     = 60
+        RetryCount           = 180
       }
       #New SPFarm Object
       $sqlAliasADM = $ConfigurationData.NonNodeData.SQLAlias | Where-Object -FilterScript { $_.Name -eq 'ADMIN' }
@@ -1433,7 +1438,7 @@ try {
       # without the property depending on whether a host name was supplied.
       if ([string]::IsNullOrWhiteSpace($sqlDbCertHostName)) {
         SPFarm APPLICATION_SpsJoinSPFarm {
-          DependsOn                    = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          DependsOn                    = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation', '[WaitForAll]PROCESS_SpsWaitForFarmCreated'
           PsDscRunAsCredential         = $SETUP
           Ensure                       = 'Present'
           IsSingleInstance             = 'Yes'
@@ -1450,7 +1455,7 @@ try {
       }
       else {
         SPFarm APPLICATION_SpsJoinSPFarm {
-          DependsOn                         = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation'
+          DependsOn                         = '[SqlAlias]MIDDLEWARE_SqlAlias_ADMIN', '[SPProductUpdate]APPLICATION_SpsCumulativeUpdateUberInstallation', '[WaitForAll]PROCESS_SpsWaitForFarmCreated'
           PsDscRunAsCredential              = $SETUP
           Ensure                            = 'Present'
           IsSingleInstance                  = 'Yes'

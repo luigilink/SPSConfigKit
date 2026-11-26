@@ -1,62 +1,56 @@
 # SPSConfigKit - Release Notes
 
-## [1.9.0] - 2026-10-05
+## [1.10.0] - 2026-11-26
 
-This release adds a complete **User Profile AD Import + My Sites** capability to the kit, plus a
-reliability fix on the lab domain controller. Every new block is optional and emitted only when its
-configuration is present, so farms that do not use these features are unaffected.
+This release adds **SharePoint Workflow Manager (SWM)** support to the kit: a new `CfgAppSwm` configuration
+that builds the SWM server, and an optional block in `CfgAppSps` that installs the SharePoint Workflow Manager
+Client on the SharePoint servers and registers the Workflow Manager farm. It also fixes the order in which
+non-master SharePoint servers join the farm. Everything new is optional and off by default
+(`SharePoint.Workflow.Enabled = $false`), so existing farms are unaffected. The name is `SWM`, not `WFM`: the
+legacy Microsoft Workflow Manager is no longer installable and its support ended on 14 July 2026.
 
 ### Added
 
-- Provision My Sites (personal sites) and their storage for AD-imported users (#90)
-  - Once users are imported (#84/#86), `CfgAppSps` can provision the My Site infrastructure from an
-    optional `Services.MySite` block in the `.psd1`. It emits an `SPQuotaTemplate` for personal
-    sites and a set of dedicated `SPContentDatabase` resources sized from the expected user base:
-    `NumberOfDatabases = max( ceil(UserCount * QuotaMaxMB / MaxDBSizeMB), ceil(UserCount /
-    MaximumSiteCount) )`, with `MaximumSiteCount`/`WarningSiteCount` per database derived from the
-    quota so no database exceeds the Microsoft-supported content-database size. `UserCount`,
-    `QuotaMaxMB`, `QuotaWarningMB` and `MaxDBSizeGB` drive the auto-calculation; `NumberOfDatabases`,
-    `MaximumSiteCount` and `WarningSiteCount` can be set explicitly to override it, and the config
-    rejects inconsistent overrides (zero/negative counts, warning above maximum, a `WebAppUrl` that
-    does not host the configured My Site host). A companion `Invoke-MySiteProvisioning.ps1` script,
-    run once from the SharePoint Management Shell as the farm account, enumerates the User Profile
-    Service profiles, skips the service accounts declared in `Secrets.psd1` (matched by full
-    `DOMAIN\user` identity), creates each missing personal site and applies the quota template. It is
-    idempotent (existing sites are re-quota'd, not recreated), supports `-WhatIf`, and terminates
-    with an error if any profile fails so automated runs do not report false success.
+- New `scripts/swm/CfgAppSwm` configuration for the SWM server (#95, #97, #99, #102, #104, #106, #108, #110, #114)
+  - Builds the SWM server end to end in pull mode: the IIS prerequisites and firewall, Azure Service Fabric,
+    the SharePoint Workflow Manager Client and SharePoint Workflow Manager installs, then the Service Bus
+    and Workflow Manager farms with a SQL alias and the Service Bus namespace. The farm secrets are encrypted
+    for the DSC certificate at compile time. The Workflow Manager endpoint can use the lab CA certificate
+    (`SharePointWorkflowCert`, opt-in through `NonNodeData.SWM.SslCertificateName`).
+  - Supporting changes: the `SWM` service account and the `SharePointWorkflowCert` certificate with its DNS
+    name in the lab domain controller configuration, the SWM installers staged by
+    `Initialize-SoftwarePackages`, and `SWMCertKey` in `Secrets.sample.psd1`.
+  - The `SWM` section of the wiki documents the behaviours learned on the lab and the pull deployment.
+    `CfgAppSwm` is still marked "In development" in the wiki.
 
-- Add the User Profile AD Import synchronization connection (#86)
-  - With the sync account in place (#84), `CfgAppSps` now declares a native
-    `SPUserProfileSyncConnection` so the User Profile Service actually imports users from Active
-    Directory. It reads an optional `Services.UserProfile.SyncConnection` block from the `.psd1`
-    (`Forest`, `SyncAccount`, `IncludedOUs`), resolves the import credential from the named Secrets
-    account (the same `Get-Variable` pattern used for certificate passwords), and sets
-    `ConnectionType = 'ActiveDirectory'`. No `SPUserProfileSyncService` is added — that is for legacy
-    FIM/MIM sync, not AD Import (`NoILMUsed = $true` stays). Because the kit targets SharePoint
-    Subscription Edition, where the resource forces the connection name to the forest with dots as
-    dashes and does not reconcile an excluded-OU list, the connection name is derived from `Forest`
-    (not exposed) and `ExcludedOUs` is not exposed — the import scope is defined by `IncludedOUs`.
+- Register the Workflow Manager farm in `CfgAppSps` (#112)
+  - New optional `NonNodeData.SharePoint.Workflow` block. When enabled, every SharePoint server installs the
+    SharePoint Workflow Manager Client and the master registers the SWM farm with `SPWorkflowService`, after
+    waiting for the SWM server and for the client installs of the other servers.
+  - The compilation fails when a setting is missing or when an `http` `HostUri` has no `AllowOAuthHttp`.
 
-- Provision the User Profile AD Import sync account on the lab domain controller (#84)
-  - User Profile AD Import needs a sync account that holds the **Replicate Directory Changes**
-    permission on the domain. `Secrets.sample.psd1` gains an `ADSYNC` service account
-    (`CONTOSO\svcspsync`), created by the existing `ADUser` loop, and `CfgAppPdc` grants it the
-    `DS-Replication-Get-Changes` extended right on the domain root via the native
-    `ADObjectPermissionEntry` resource (idempotent, least privilege — not the `-All` variant). The
-    grant is emitted only when an `ADSYNC` entry exists in `Secrets.psd1`, and lives inside the
-    `IsADSServer` block, so it runs only on the lab domain controller. Real farms rely on the
-    customer-provided sync account instead; this is a lab convenience.
+- Ship sample modern team and communication sites with dedicated content databases (#93)
 
 ### Fixed
 
-- PDC no longer reports a pending reboot on every run because of unrelated file renames (#88)
-  - The `RebootOnSignalFromCreateADForest` `PendingReboot` resource reacts to any reboot source,
-    so `PendingFileRenameOperations` queued by Microsoft EdgeUpdate (cleaning up an old updater
-    version folder on next boot) flagged a pending reboot on every consistency check, even though
-    it is unrelated to the AD DS promotion the resource is meant to handle. `SkipPendingFileRename`
-    is now set so only the genuine post-promotion reboot (surfaced via Component-Based Servicing)
-    triggers the resource.
+- Non-master SharePoint servers now join the farm only once the master has created it (#74)
+  - The wait declared on the non-master nodes was not wired to the join. Waiting for the end of the master
+    configuration would have deadlocked with the search topology wait (#73), so the master now emits an early
+    `SPSFarmCreated_Completed` marker right after the farm creation and the join waits for it.
+  - The permanent `PROCESS_SPSWaitForWebApp` drift reported at every consistency check on the non-master
+    nodes is gone.
 
+### Validation and known limits
+
+- Validated on the lab Subscription Edition farm (pull mode): the SWM server is compliant, the SharePoint
+  servers apply the Workflow block, both waits pass, the Workflow Service Application Proxy exists and the
+  Workflow Service status page reports "Workflow is Connected".
+- Not tested: running a SharePoint 2013 workflow end to end, and bringing up new (clean) nodes with the #74 fix.
+- Not handled yet: updating the SharePoint Workflow Manager Client MSI when its product code changes (#116).
+  The Service Bus certificates stay auto-generated. Port 443 for the Workflow Manager endpoint is untested;
+  the lab uses 12290.
+- To enable the Workflow block on an existing farm, let the master apply the new MOF first: the other
+  SharePoint servers wait for the new marker until then.
 
 ## Changelog
 

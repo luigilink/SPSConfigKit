@@ -5,6 +5,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-11-26
+
 ### Added
 
 - Run the SWM server in pull mode and document the deployment (#114)
@@ -14,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     resources in state and 0 drifted, and the compliance dashboard shows the node as compliant. The wiki
     describes the pull deployment of `CfgAppSwm` (the push procedure stays for debugging) and no longer
     calls it a work in progress. Documentation only. The wait of the SharePoint master on the SWM marker
-    (#112), now between two pull-mode nodes, is not tested yet.
+    (#112), now between two pull-mode nodes, was validated afterwards on the lab (see #112).
 
 - Install the SharePoint Workflow Manager Client and register the Workflow Manager farm in `CfgAppSps` (#112)
   - New optional `NonNodeData.SharePoint.Workflow` block (`Enabled = $false` by default: nothing changes
@@ -25,8 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     servers, in a `Node` block declared last so the wait delays nothing else. The compilation fails when a
     setting is missing or when an `http` `HostUri` has no `AllowOAuthHttp`. The configuration test checks
     the block. Compiled on the lab server with the feature disabled (no Workflow resource in any MOF) and
-    enabled (client on the three SharePoint servers, registration and waits on the master only); not applied
-    yet. Updating the client package is not handled yet.
+    enabled (client on the three SharePoint servers, registration and waits on the master only), then applied on
+    the lab farm in pull mode: the client is installed on the SharePoint servers, both waits passed,
+    `SPWorkflowService` registered the farm, the Workflow Service Application Proxy exists and the Workflow
+    Service status page reports "Workflow is Connected". No SharePoint 2013 workflow was run end to end yet.
+    Updating the client package is not handled yet (#116).
 
 - Use the lab CA certificate on the Workflow Manager endpoint in `CfgAppSwm` (#110)
   - `CfgAppSwm` imports `SharePointWorkflowCert` into `LocalMachine\My` (`PfxImport`, PFX password from the
@@ -40,7 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     It is opt-in through the new `NonNodeData.SWM.SslCertificateName` (with an `NonNodeData.ADC.certificates`
     entry): without it the farm keeps its auto-generated certificate. The Service Bus certificates stay
     auto-generated. The `ADC`, `SQLAlias` and `IIS` blocks of `CfgAppSwm.psd1` follow the order and the
-    layout of `CfgAppSps.psd1`. Compiled on the lab SWM server; not applied yet.
+    layout of `CfgAppSps.psd1`. Compiled and applied on the lab SWM server.
 
 - Create the Service Bus and Workflow Manager farms in `CfgAppSwm`, with secrets encrypted for the DSC certificate (#108)
   - `CfgAppSwm` also removes the default IIS application pools, as `CfgAppSps` and the Office Online Server
@@ -71,8 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     launch condition of the SPWFM installer) and SharePoint Workflow Manager (`MsiPackage`). The file
     names, the MSI product codes and the minimum Service Fabric version are declared in
     `NonNodeData.SWM`, and the installation logs go to the logs drive. The script fails fast, listing
-    the missing keys, when the `.psd1` predates these settings. Compiled on the lab SWM server; not
-    applied yet.
+    the missing keys, when the `.psd1` predates these settings. Compiled and applied on the lab SWM server.
 
 - Install the IIS prerequisites, stage the installers and open the firewall in `CfgAppSwm` (#104)
   - `CfgAppSwm` now installs the IIS features documented for SharePoint Workflow Manager (Web
@@ -82,8 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `<Drives.Data>\SoftwarePackages\SWM` (no SWM-specific path setting) and opens an inbound
     firewall rule on the Workflow Management HTTPS port, set by the new `NonNodeData.SWM.HttpsPort`
     (default 12290, the port documented by Microsoft Learn). The Service Bus and Service Fabric ports
-    are not documented for SharePoint Workflow Manager and are not opened yet. Compiled on the lab
-    SWM server; not applied yet.
+    are not documented for SharePoint Workflow Manager and are not opened yet. Compiled and applied on the lab
+    SWM server.
 
 - Add the `CfgAppSwm` DSC skeleton for the SharePoint Workflow Manager (SWM) server (#102)
   - New `scripts/swm/` folder with `CfgAppSwm.ps1` and `CfgAppSwm.psd1`, modelled on `CfgAppSql`:
@@ -94,7 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     left to `Initialize-DscDisks.ps1`, as for the other nodes (`NonNodeData.ManageDisks` is its switch). This is only the skeleton: the
     IIS / Service Fabric / SharePoint Workflow Manager installation, the endpoint certificate, the
     farm creation and the SharePoint registration are added in later steps, and the configuration
-    is applied in push mode while it is developed. Compiled on the lab SWM server; not applied yet.
+    is applied in push mode while it is developed. Compiled on the lab SWM server; applied with the later steps.
 
 - Issue a `SharePointWorkflowCert` certificate and publish a DNS name for the SWM endpoint (#99)
   - The SharePoint Workflow Manager (SWM) farm is meant to be served over HTTPS on port 443 with a
@@ -155,8 +159,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     renamed `PROCESS_SpsWaitForFarmCreated`, is on that marker and in the `DependsOn` of both
     `APPLICATION_SpsJoinSPFarm` variants. Compiled on the lab with the lab `.psd1`: the only differences with
     the published MOFs are the new `Log` on APP1 and, on APP2, WFE1 and WFE2, the renamed wait and the join
-    dependency (no other resource changes); not applied yet. On an existing farm, let the master apply the
-    new MOF first: the other nodes wait for the new marker until then.
+    dependency (no other resource changes). Applied on the lab farm in pull mode: APP1 completed with 150
+    resources in state, APP2 with 74, and WFE1 and WFE2 pulled the new MOF on their own with 74 in state; the
+    permanent `PROCESS_SPSWaitForWebApp` drift (73 in state, 1 drifted at every consistency check) is gone. A
+    clean bring-up of new nodes was not tested. On an existing farm, let the master apply the new MOF first:
+    the other nodes wait for the new marker until then.
 
 ## [1.9.0] - 2026-10-05
 

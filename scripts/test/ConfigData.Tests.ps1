@@ -64,6 +64,7 @@ BeforeDiscovery {
   $hasSqlEncryption = [bool]$cfg.NonNodeData.SQL.ForceEncryption
   # SQL maintenance-plan opt-in (Ola Hallengren solution).
   $hasSqlMaintenance = [bool]$cfg.NonNodeData.SQL.InstallMaintenanceSolution
+  $hasSqlSchedules = [bool]($hasSqlMaintenance -and @($cfg.NonNodeData.SQL.MaintenanceSolution.Schedules | Where-Object { $_ }).Count -gt 0)
   $hasAdc = [bool]$cfg.NonNodeData.ADC
   $hasAliases = [bool]$cfg.NonNodeData.SQLAlias
   # Source media is only relevant to product configs that copy install bits
@@ -149,6 +150,98 @@ BeforeAll {
   $script:SecretsPath = $SecretsPath
   $script:SkipFilesystem = [bool]$SkipFilesystem
   $script:ConfigData = Import-PowerShellDataFile -LiteralPath $ConfigPath
+
+  # Job names created by Ola Hallengren's MaintenanceSolution.sql (CreateJobs = 'Y').
+  $script:OlaJobNames = @(
+    'CommandLog Cleanup'
+    'DatabaseBackup - SYSTEM_DATABASES - FULL'
+    'DatabaseBackup - USER_DATABASES - DIFF'
+    'DatabaseBackup - USER_DATABASES - FULL'
+    'DatabaseBackup - USER_DATABASES - LOG'
+    'DatabaseIntegrityCheck - SYSTEM_DATABASES'
+    'DatabaseIntegrityCheck - USER_DATABASES'
+    'IndexOptimize - USER_DATABASES'
+    'Output File Cleanup'
+    'sp_delete_backuphistory'
+    'sp_purge_jobhistory'
+  )
+
+  # Mirror the validation of New-SqlMaintenanceScheduleScript (CfgAppSql.ps1) and return one
+  # { Category; Message } object per problem: schema, freq, job or duplicate.
+  function script:Test-SqlScheduleDefinition {
+    param
+    (
+      [Parameter(Mandatory = $true)] [AllowEmptyCollection()] [object[]] $Schedule
+    )
+    $problems = @()
+    $seen = @{}
+    $isTime = {
+      param($v)
+      $n = 0
+      [int]::TryParse("$v", [ref]$n) -and $n -ge 0 -and $n -le 235959 -and ($n % 100) -lt 60 -and ([math]::Floor($n / 100) % 100) -lt 60
+    }
+    foreach ($s in $Schedule) {
+      $label = if ($s.Name) { "'$($s.Name)'" } else { '<unnamed>' }
+      if ($s -isnot [System.Collections.IDictionary]) {
+        $problems += [pscustomobject]@{ Category = 'schema'; Message = "$label : entry must be a hashtable" }
+        continue
+      }
+      if ([string]::IsNullOrWhiteSpace($s.Name) -or "$($s.Name)".Length -gt 128) {
+        $problems += [pscustomobject]@{ Category = 'schema'; Message = "$label : Name is required (128 characters max)" }
+      }
+      elseif ($seen.ContainsKey("$($s.Name)".ToLowerInvariant())) {
+        $problems += [pscustomobject]@{ Category = 'duplicate'; Message = "$label : Name is declared more than once" }
+      }
+      else {
+        $seen["$($s.Name)".ToLowerInvariant()] = $true
+      }
+      $jobs = @($s.Jobs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+      if ($jobs.Count -eq 0) {
+        $problems += [pscustomobject]@{ Category = 'schema'; Message = "$label : Jobs must list at least one job name" }
+      }
+      foreach ($job in $jobs) {
+        if ($job -cnotin $script:OlaJobNames) {
+          $problems += [pscustomobject]@{ Category = 'job'; Message = "$label : '$job' is not a job created by the Maintenance Solution" }
+        }
+      }
+      $freqType = 0
+      $freqInterval = 0
+      $subdayType = 1
+      $subdayInterval = 0
+      if (-not [int]::TryParse("$($s.FreqType)", [ref]$freqType) -or $freqType -notin 4, 8) {
+        $problems += [pscustomobject]@{ Category = 'freq'; Message = "$label : FreqType must be 4 or 8" }
+      }
+      else {
+        $max = if ($freqType -eq 8) { 127 } else { 365 }
+        if (-not [int]::TryParse("$($s.FreqInterval)", [ref]$freqInterval) -or $freqInterval -lt 1 -or $freqInterval -gt $max) {
+          $problems += [pscustomobject]@{ Category = 'freq'; Message = "$label : FreqInterval must be 1-$max for FreqType $freqType" }
+        }
+      }
+      if ($null -ne $s.SubdayType -and (-not [int]::TryParse("$($s.SubdayType)", [ref]$subdayType) -or $subdayType -notin 1, 4, 8)) {
+        $problems += [pscustomobject]@{ Category = 'freq'; Message = "$label : SubdayType must be 1, 4 or 8" }
+      }
+      if ($subdayType -in 4, 8) {
+        $max = if ($subdayType -eq 4) { 59 } else { 23 }
+        if (-not [int]::TryParse("$($s.SubdayInterval)", [ref]$subdayInterval) -or $subdayInterval -lt 1 -or $subdayInterval -gt $max) {
+          $problems += [pscustomobject]@{ Category = 'freq'; Message = "$label : SubdayInterval must be 1-$max for SubdayType $subdayType" }
+        }
+      }
+      $startOk = & $isTime $s.StartTime
+      if (-not $startOk) {
+        $problems += [pscustomobject]@{ Category = 'freq'; Message = "$label : StartTime must be a valid HHMMSS value" }
+      }
+      if ($null -ne $s.EndTime -and -not (& $isTime $s.EndTime)) {
+        $problems += [pscustomobject]@{ Category = 'freq'; Message = "$label : EndTime must be a valid HHMMSS value" }
+      }
+      elseif ($subdayType -in 4, 8 -and $startOk) {
+        $end = if ($null -ne $s.EndTime) { [int]$s.EndTime } else { 235959 }
+        if ($end -le [int]$s.StartTime) {
+          $problems += [pscustomobject]@{ Category = 'freq'; Message = "$label : EndTime must be later than StartTime" }
+        }
+      }
+    }
+    return $problems
+  }
 
   # Reproduce the Drives derivation the Cfg*.ps1 scripts do from NonNodeData.Disks,
   # so the drive-letter tests validate the effective (derived) values at run time.
@@ -694,6 +787,59 @@ Describe 'SQL maintenance plan' -Skip:(-not $hasSqlMaintenance) {
     $maint = $script:ConfigData.NonNodeData.SQL.MaintenanceSolution
     $db = if ($maint -and $maint.DatabaseName) { $maint.DatabaseName } else { 'master' }
     $db | Should -Not -BeNullOrEmpty
+  }
+}
+
+# ===========================================================================
+# 8d. SQL maintenance schedules (create-only SQL Agent schedules) - opt-in
+# ===========================================================================
+Describe 'SQL maintenance schedules' -Skip:(-not $hasSqlSchedules) {
+  BeforeAll {
+    $script:SchedulesProblems = @(Test-SqlScheduleDefinition -Schedule @($script:ConfigData.NonNodeData.SQL.MaintenanceSolution.Schedules | Where-Object { $_ }))
+  }
+
+  It 'declares every schedule with a Name, a StartTime and at least one job' {
+    @($script:SchedulesProblems | Where-Object Category -EQ 'schema').Message | Should -BeNullOrEmpty
+  }
+  It 'uses consistent FreqType / FreqInterval / SubdayType / StartTime / EndTime values' {
+    @($script:SchedulesProblems | Where-Object Category -EQ 'freq').Message | Should -BeNullOrEmpty
+  }
+  It 'only references jobs created by the Maintenance Solution' {
+    @($script:SchedulesProblems | Where-Object Category -EQ 'job').Message | Should -BeNullOrEmpty
+  }
+  It 'declares each schedule Name once' {
+    @($script:SchedulesProblems | Where-Object Category -EQ 'duplicate').Message | Should -BeNullOrEmpty
+  }
+}
+
+Describe 'SQL maintenance schedules validation' -Skip:(-not $hasSql) {
+  It 'accepts the lab profile (weekdays, Friday, Wednesday, 30-minute log schedule)' {
+    $profile = @(
+      @{ Name = 'SPSKit - Weekdays 17:30'; FreqType = 8; FreqInterval = 62; StartTime = 173000; Jobs = @('DatabaseBackup - SYSTEM_DATABASES - FULL') }
+      @{ Name = 'SPSKit - Weekdays 18:00'; FreqType = 8; FreqInterval = 62; StartTime = 180000; Jobs = @('DatabaseBackup - USER_DATABASES - FULL') }
+      @{ Name = 'SPSKit - Friday 12:00'; FreqType = 8; FreqInterval = 32; StartTime = 120000; Jobs = @('DatabaseIntegrityCheck - SYSTEM_DATABASES') }
+      @{ Name = 'SPSKit - Wednesday 12:30'; FreqType = 8; FreqInterval = 8; StartTime = 123000; Jobs = @('IndexOptimize - USER_DATABASES') }
+      @{ Name = 'SPSKit - Friday 19:00'; FreqType = 8; FreqInterval = 32; StartTime = 190000; Jobs = @('CommandLog Cleanup', 'Output File Cleanup', 'sp_delete_backuphistory', 'sp_purge_jobhistory') }
+      @{ Name = 'SPSKit - Weekdays log 30min'; FreqType = 8; FreqInterval = 62; SubdayType = 4; SubdayInterval = 30; StartTime = 83000; EndTime = 193000; Jobs = @('DatabaseBackup - USER_DATABASES - LOG') }
+    )
+    @(Test-SqlScheduleDefinition -Schedule $profile) | Should -BeNullOrEmpty
+  }
+
+  It 'rejects <Title> (<Category>)' -ForEach @(
+    @{ Title = 'a missing Name'; Category = 'schema'; Schedule = @(@{ FreqType = 4; FreqInterval = 1; StartTime = 10000; Jobs = @('CommandLog Cleanup') }) }
+    @{ Title = 'an empty Jobs list'; Category = 'schema'; Schedule = @(@{ Name = 'a'; FreqType = 4; FreqInterval = 1; StartTime = 10000; Jobs = @() }) }
+    @{ Title = 'an unknown FreqType'; Category = 'freq'; Schedule = @(@{ Name = 'a'; FreqType = 16; FreqInterval = 1; StartTime = 10000; Jobs = @('CommandLog Cleanup') }) }
+    @{ Title = 'a weekly bitmask above 127'; Category = 'freq'; Schedule = @(@{ Name = 'a'; FreqType = 8; FreqInterval = 128; StartTime = 10000; Jobs = @('CommandLog Cleanup') }) }
+    @{ Title = 'a StartTime that is not HHMMSS'; Category = 'freq'; Schedule = @(@{ Name = 'a'; FreqType = 8; FreqInterval = 62; StartTime = 173060; Jobs = @('CommandLog Cleanup') }) }
+    @{ Title = 'a SubdayType 4 without SubdayInterval'; Category = 'freq'; Schedule = @(@{ Name = 'a'; FreqType = 8; FreqInterval = 62; SubdayType = 4; StartTime = 83000; Jobs = @('DatabaseBackup - USER_DATABASES - LOG') }) }
+    @{ Title = 'an EndTime before StartTime with a sub-day frequency'; Category = 'freq'; Schedule = @(@{ Name = 'a'; FreqType = 8; FreqInterval = 62; SubdayType = 4; SubdayInterval = 30; StartTime = 193000; EndTime = 83000; Jobs = @('DatabaseBackup - USER_DATABASES - LOG') }) }
+    @{ Title = 'a job that is not an Ola job'; Category = 'job'; Schedule = @(@{ Name = 'a'; FreqType = 4; FreqInterval = 1; StartTime = 10000; Jobs = @('syspolicy_purge_history') }) }
+    @{ Title = 'a duplicate schedule Name'; Category = 'duplicate'; Schedule = @(
+        @{ Name = 'a'; FreqType = 4; FreqInterval = 1; StartTime = 10000; Jobs = @('CommandLog Cleanup') }
+        @{ Name = 'A'; FreqType = 4; FreqInterval = 1; StartTime = 20000; Jobs = @('Output File Cleanup') }
+      ) }
+  ) {
+    @(Test-SqlScheduleDefinition -Schedule $Schedule | Where-Object Category -EQ $Category) | Should -Not -BeNullOrEmpty
   }
 }
 

@@ -211,6 +211,18 @@ The compile + apply flow is idempotent:
 It is safe to run after every change to `Secrets.psd1`, `CfgAppSps.psd1`,
 or after a SharePoint cumulative update lands on the share.
 
+## Optional: SQL maintenance schedules
+
+If you build the SQL server with `CfgAppSql` and `NonNodeData.SQL.InstallMaintenanceSolution = $true`,
+the Ola Hallengren jobs exist but are not scheduled. To have them scheduled on a lab or a rebuildable VM:
+
+1. Fill `NonNodeData.SQL.MaintenanceSolution.Schedules` in `CfgAppSql.psd1` (start from the commented
+   example; the keys are described in [Configuration](Configuration)).
+2. Check it with `Invoke-ConfigDataTest.ps1 -ConfigPath .\scripts\sql\CfgAppSql.psd1`, then compile and apply
+   as usual.
+
+Schedules are created once and never modified by DSC: a change made later in SQL Server Agent stays in place.
+
 ## Error handling
 
 - The compile script wraps everything in a `try { … } catch { … }` that

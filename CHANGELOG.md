@@ -5,6 +5,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Create the SQL Agent schedules of the Maintenance Solution jobs in `CfgAppSql`, create-only and opt-in (#119)
+  - New optional `NonNodeData.SQL.MaintenanceSolution.Schedules` list (empty by default: the jobs stay
+    unscheduled, nothing changes). Each entry has a `Name`, `FreqType` (4 daily, 8 weekly), `FreqInterval`,
+    `StartTime` (HHMMSS), optional `SubdayType` / `SubdayInterval` / `EndTime`, and the `Jobs` to attach. When the
+    list is not empty, a `SqlScript` resource (`MIDDLEWARE_SqlMaintenanceSchedules`, after the installation of the
+    Maintenance Solution) creates a schedule only if no schedule of that name exists in `msdb`, then attaches it to
+    the listed jobs if not already attached. It never modifies an existing schedule, and its Test ignores the
+    time and days: a change made by a DBA stays in place and is not reported as drift. A job missing from `msdb`
+    is skipped. The compilation fails on an invalid entry.
+  - `CfgAppSql.psd1` carries a commented "lab VMs shut down at 20:00" profile. The configuration test checks
+    the list (required fields, frequency values, jobs created by the Maintenance Solution, unique names), with
+    synthetic cases for the sub-day frequency. `scripts/sql/README.md` and the wiki describe the option.
+  - Not applied to a live SQL Server yet: to be validated on the lab before the release.
+
 ## [1.10.0] - 2026-11-26
 
 ### Added

@@ -185,6 +185,161 @@ try {
     }
   }
 
+  function ConvertTo-SqlStringLiteral {
+    param
+    (
+      [parameter(Mandatory = $true)]
+      [System.String]
+      $Value
+    )
+    return "N'" + $Value.Replace("'", "''") + "'"
+  }
+
+  function Test-SqlAgentTime {
+    param
+    (
+      [parameter(Mandatory = $true)]
+      [AllowNull()]
+      $Value
+    )
+    $number = 0
+    if (-not [int]::TryParse("$Value", [ref]$number)) { return $false }
+    return ($number -ge 0 -and $number -le 235959 -and ($number % 100) -lt 60 -and ([math]::Floor($number / 100) % 100) -lt 60)
+  }
+
+  function New-SqlMaintenanceScheduleScript {
+    param
+    (
+      [parameter(Mandatory = $true)]
+      [System.Object[]]
+      $Schedule
+    )
+    $errors = @()
+    # Keep in sync with $script:OlaJobNames in scripts/test/ConfigData.Tests.ps1.
+    $olaJobNames = @(
+      'CommandLog Cleanup'
+      'DatabaseBackup - SYSTEM_DATABASES - FULL'
+      'DatabaseBackup - USER_DATABASES - DIFF'
+      'DatabaseBackup - USER_DATABASES - FULL'
+      'DatabaseBackup - USER_DATABASES - LOG'
+      'DatabaseIntegrityCheck - SYSTEM_DATABASES'
+      'DatabaseIntegrityCheck - USER_DATABASES'
+      'IndexOptimize - USER_DATABASES'
+      'Output File Cleanup'
+      'sp_delete_backuphistory'
+      'sp_purge_jobhistory'
+    )
+    $seenNames = @{}
+    $rows = @()
+    $setStatements = @()
+    foreach ($item in $Schedule) {
+      $label = if ($item.Name) { "'$($item.Name)'" } else { '<unnamed>' }
+      $freqType = 0
+      $freqInterval = 0
+      $subdayType = 1
+      $subdayInterval = 0
+      $endTime = 235959
+      if ([string]::IsNullOrWhiteSpace($item.Name) -or "$($item.Name)".Length -gt 128) {
+        $errors += "$label : Name is required (128 characters max)."
+      }
+      elseif ($seenNames.ContainsKey("$($item.Name)".ToLowerInvariant())) {
+        $errors += "$label : Name is declared more than once."
+      }
+      else {
+        $seenNames["$($item.Name)".ToLowerInvariant()] = $true
+      }
+      if (-not [int]::TryParse("$($item.FreqType)", [ref]$freqType) -or $freqType -notin 4, 8) {
+        $errors += "$label : FreqType must be 4 (daily) or 8 (weekly)."
+      }
+      elseif (-not [int]::TryParse("$($item.FreqInterval)", [ref]$freqInterval) -or $freqInterval -lt 1 -or $freqInterval -gt $(if ($freqType -eq 8) { 127 } else { 365 })) {
+        $errors += "$label : FreqInterval must be 1-127 (weekly day bitmask) or 1-365 (daily, every N days)."
+      }
+      if ($null -ne $item.SubdayType -and (-not [int]::TryParse("$($item.SubdayType)", [ref]$subdayType) -or $subdayType -notin 1, 4, 8)) {
+        $errors += "$label : SubdayType must be 1 (once), 4 (minutes) or 8 (hours)."
+      }
+      if ($subdayType -ne 1) {
+        $maxSubday = if ($subdayType -eq 4) { 59 } else { 23 }
+        if (-not [int]::TryParse("$($item.SubdayInterval)", [ref]$subdayInterval) -or $subdayInterval -lt 1 -or $subdayInterval -gt $maxSubday) {
+          $errors += "$label : SubdayInterval must be 1-$maxSubday when SubdayType is $subdayType."
+        }
+      }
+      if (-not (Test-SqlAgentTime -Value $item.StartTime)) {
+        $errors += "$label : StartTime must be a valid HHMMSS value (e.g. 173000)."
+      }
+      if ($null -ne $item.EndTime) {
+        if (Test-SqlAgentTime -Value $item.EndTime) {
+          $endTime = [int]$item.EndTime
+        }
+        else {
+          $errors += "$label : EndTime must be a valid HHMMSS value (e.g. 193000)."
+        }
+      }
+      if ($subdayType -ne 1 -and (Test-SqlAgentTime -Value $item.StartTime) -and $endTime -le [int]$item.StartTime) {
+        $errors += "$label : EndTime must be later than StartTime when SubdayType is not 1."
+      }
+      $jobs = @($item.Jobs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+      if ($jobs.Count -eq 0) {
+        $errors += "$label : Jobs must list at least one job name."
+      }
+      foreach ($job in $jobs) {
+        if ($job -cnotin $olaJobNames) {
+          $errors += "$label : '$job' is not a job created by the Maintenance Solution."
+        }
+      }
+      if ($errors.Count -gt 0) { continue }
+
+      $scheduleLiteral = ConvertTo-SqlStringLiteral -Value $item.Name
+      $recurrence = if ($freqType -eq 8) { 1 } else { 0 }
+      $setStatements += @"
+IF NOT EXISTS (SELECT 1 FROM dbo.sysschedules WHERE [name] = $scheduleLiteral)
+    EXEC dbo.sp_add_schedule @schedule_name = $scheduleLiteral, @enabled = 1, @freq_type = $freqType, @freq_interval = $freqInterval, @freq_subday_type = $subdayType, @freq_subday_interval = $subdayInterval, @freq_relative_interval = 0, @freq_recurrence_factor = $recurrence, @active_start_time = $([int]$item.StartTime), @active_end_time = $endTime;
+"@
+      foreach ($job in $jobs) {
+        $jobLiteral = ConvertTo-SqlStringLiteral -Value $job
+        $rows += "($scheduleLiteral, $jobLiteral)"
+        $setStatements += @"
+IF NOT EXISTS (SELECT 1 FROM dbo.sysjobs WHERE [name] = $jobLiteral)
+    PRINT N'Job not found, skipped: ' + $jobLiteral
+ELSE IF NOT EXISTS (SELECT 1 FROM dbo.sysjobschedules js JOIN dbo.sysjobs j ON j.job_id = js.job_id JOIN dbo.sysschedules s ON s.schedule_id = js.schedule_id WHERE j.[name] = $jobLiteral AND s.[name] = $scheduleLiteral)
+    EXEC dbo.sp_attach_schedule @job_name = $jobLiteral, @schedule_name = $scheduleLiteral;
+"@
+      }
+    }
+    if ($errors.Count -gt 0) {
+      throw ("NonNodeData.SQL.MaintenanceSolution.Schedules is invalid:`n - " + ($errors -join "`n - "))
+    }
+    $wanted = $rows -join ",`n    "
+    $testScript = @"
+USE [msdb];
+SET NOCOUNT ON;
+DECLARE @Wanted TABLE (ScheduleName sysname, JobName sysname);
+INSERT INTO @Wanted (ScheduleName, JobName) VALUES
+    $wanted;
+SELECT N'Missing schedule' AS Issue, w.ScheduleName, CAST(NULL AS sysname) AS JobName
+FROM (SELECT DISTINCT ScheduleName FROM @Wanted) AS w
+WHERE NOT EXISTS (SELECT 1 FROM dbo.sysschedules s WHERE s.[name] = w.ScheduleName)
+UNION ALL
+SELECT N'Missing link', w.ScheduleName, w.JobName
+FROM @Wanted AS w
+JOIN dbo.sysjobs j ON j.[name] = w.JobName
+WHERE NOT EXISTS (SELECT 1 FROM dbo.sysjobschedules js JOIN dbo.sysschedules s ON s.schedule_id = js.schedule_id WHERE js.job_id = j.job_id AND s.[name] = w.ScheduleName);
+"@
+    $setScript = "USE [msdb];`nSET NOCOUNT ON;`n" + ($setStatements -join "`n")
+    $getScript = @"
+USE [msdb];
+SET NOCOUNT ON;
+DECLARE @Wanted TABLE (ScheduleName sysname, JobName sysname);
+INSERT INTO @Wanted (ScheduleName, JobName) VALUES
+    $wanted;
+SELECT s.[name] AS ScheduleName, j.[name] AS JobName, s.[enabled], s.freq_type, s.freq_interval, s.active_start_time
+FROM dbo.sysschedules s
+LEFT JOIN dbo.sysjobschedules js ON js.schedule_id = s.schedule_id
+LEFT JOIN dbo.sysjobs j ON j.job_id = js.job_id
+WHERE s.[name] IN (SELECT ScheduleName FROM @Wanted);
+"@
+    return @{ Test = $testScript; Set = $setScript; Get = $getScript }
+  }
+
   Configuration CfgAppSql {
     #Initialize variables
     $dataDrive = $configurationData.NonNodeData.Drives.Data
@@ -573,6 +728,51 @@ IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE [name] = N'CommandExecute' AND [t
           # whether ForceEncryption is enabled on the instance.
           Encrypt              = 'Optional'
           QueryTimeout         = 0
+        }
+        # Optional create-only SQL Agent schedules for the Ola jobs (NonNodeData.SQL.MaintenanceSolution.Schedules,
+        # empty by default). Existing schedules are never modified, see scripts/sql/README.md.
+        $maintSchedules = @($maintConfig.Schedules | Where-Object { $_ })
+        if ($maintSchedules.Count -gt 0) {
+          $scheduleScripts = New-SqlMaintenanceScheduleScript -Schedule $maintSchedules
+          $scheduleTestPath = Join-Path $sqlDestinationPath 'Test-MaintenanceSchedules.sql'
+          $scheduleSetPath = Join-Path $sqlDestinationPath 'Set-MaintenanceSchedules.sql'
+          $scheduleGetPath = Join-Path $sqlDestinationPath 'Get-MaintenanceSchedules.sql'
+          File MIDDLEWARE_SqlMaintenanceSchedulesTestScript {
+            DestinationPath = $scheduleTestPath
+            Contents        = $scheduleScripts.Test
+            Type            = 'File'
+            Force           = $true
+            Ensure          = 'Present'
+            DependsOn       = '[File]APPLICATION_SqlGetSources'
+          }
+          File MIDDLEWARE_SqlMaintenanceSchedulesSetScript {
+            DestinationPath = $scheduleSetPath
+            Contents        = $scheduleScripts.Set
+            Type            = 'File'
+            Force           = $true
+            Ensure          = 'Present'
+            DependsOn       = '[File]APPLICATION_SqlGetSources'
+          }
+          File MIDDLEWARE_SqlMaintenanceSchedulesGetScript {
+            DestinationPath = $scheduleGetPath
+            Contents        = $scheduleScripts.Get
+            Type            = 'File'
+            Force           = $true
+            Ensure          = 'Present'
+            DependsOn       = '[File]APPLICATION_SqlGetSources'
+          }
+          SqlScript MIDDLEWARE_SqlMaintenanceSchedules {
+            Id                   = 'MIDDLEWARE_SqlMaintenanceSchedules'
+            DependsOn            = '[SqlScript]MIDDLEWARE_SqlMaintenanceSolution', '[File]MIDDLEWARE_SqlMaintenanceSchedulesTestScript', '[File]MIDDLEWARE_SqlMaintenanceSchedulesSetScript', '[File]MIDDLEWARE_SqlMaintenanceSchedulesGetScript'
+            PsDscRunAsCredential = $sqlAdminCredential
+            InstanceName         = $sqlSPInstance
+            ServerName           = $Node.NodeName
+            SetFilePath          = $scheduleSetPath
+            TestFilePath         = $scheduleTestPath
+            GetFilePath          = $scheduleGetPath
+            Encrypt              = 'Optional'
+            QueryTimeout         = 0
+          }
         }
       }
       # Open port on the firewall only when everything is ready, as SharePoint DSC is testing it to start creating the farm.

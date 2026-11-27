@@ -94,6 +94,24 @@
         # Optional full path override for the .sql (UNC or local). When omitted the file is
         # read from the staged SQL folder (<Drives.Data>\SoftwarePackages\SQL\<ScriptFileName>).
         # SourcePath   = '\\PULL\Softwarepackages\SQL\MaintenanceSolution.sql'
+        # Optional, create-only SQL Agent schedules for the Ola jobs (empty = jobs left unscheduled,
+        # the default). A schedule is created only when no schedule of that name exists in msdb, then
+        # attached to the listed jobs; an existing schedule is never modified. See scripts/sql/README.md.
+        #   FreqType 4 = daily (FreqInterval = every N days), 8 = weekly (FreqInterval = day bitmask:
+        #   Sun 1, Mon 2, Tue 4, Wed 8, Thu 16, Fri 32, Sat 64; Mon-Fri = 62). StartTime / EndTime are HHMMSS.
+        #   Optional: SubdayType 1 (once, default) / 4 (minutes) / 8 (hours), SubdayInterval, EndTime.
+        # Example "lab VMs shut down at 20:00" (the LOG job is only useful for FULL recovery databases):
+        # Schedules    = @(
+        #   @{ Name = 'SPSKit - Weekdays 17:30'; FreqType = 8; FreqInterval = 62; StartTime = 173000; Jobs = @('DatabaseBackup - SYSTEM_DATABASES - FULL') }
+        #   @{ Name = 'SPSKit - Weekdays 18:00'; FreqType = 8; FreqInterval = 62; StartTime = 180000; Jobs = @('DatabaseBackup - USER_DATABASES - FULL') }
+        #   @{ Name = 'SPSKit - Friday 12:00'; FreqType = 8; FreqInterval = 32; StartTime = 120000; Jobs = @('DatabaseIntegrityCheck - SYSTEM_DATABASES') }
+        #   @{ Name = 'SPSKit - Friday 12:15'; FreqType = 8; FreqInterval = 32; StartTime = 121500; Jobs = @('DatabaseIntegrityCheck - USER_DATABASES') }
+        #   @{ Name = 'SPSKit - Wednesday 12:30'; FreqType = 8; FreqInterval = 8; StartTime = 123000; Jobs = @('IndexOptimize - USER_DATABASES') }
+        #   @{ Name = 'SPSKit - Friday 19:00'; FreqType = 8; FreqInterval = 32; StartTime = 190000; Jobs = @('CommandLog Cleanup', 'Output File Cleanup', 'sp_delete_backuphistory', 'sp_purge_jobhistory') }
+        #   # Log backup every 30 minutes, 08:30-19:30, Mon-Fri (FULL recovery databases only):
+        #   # @{ Name = 'SPSKit - Weekdays log 30min'; FreqType = 8; FreqInterval = 62; SubdayType = 4; SubdayInterval = 30; StartTime = 083000; EndTime = 193000; Jobs = @('DatabaseBackup - USER_DATABASES - LOG') }
+        # )
+        Schedules      = @()
       }
     }
   }

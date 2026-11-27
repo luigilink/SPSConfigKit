@@ -762,6 +762,37 @@ and is the canonical schema &mdash; treat the snippet above as a map.
   `NonNodeData.SQL`. Defaults are `<NonNodeData.SourcePath>\SQL` and
   `<Drives.Data>\SoftwarePackages\SQL`. SQL doesn't use `Subfolders` &mdash;
   `setup.exe` is expected at the root of `DestinationPath`.
+- **SQL maintenance schedules (optional)** &mdash; with
+  `NonNodeData.SQL.InstallMaintenanceSolution = $true`, the SQL Agent jobs of the Ola Hallengren
+  Maintenance Solution are created **unscheduled**. `NonNodeData.SQL.MaintenanceSolution.Schedules`
+  (empty by default) lists schedules that `CfgAppSql` creates **only if no schedule of that name
+  exists in `msdb`**, then attaches to the listed jobs. An existing schedule is never modified, so a
+  change made by a DBA is kept and is not drift.
+
+  ```powershell
+  Schedules = @(
+      @{ Name = 'SPSKit - Weekdays 18:00'; FreqType = 8; FreqInterval = 62; StartTime = 180000
+         Jobs = @('DatabaseBackup - USER_DATABASES - FULL') }
+      @{ Name = 'SPSKit - Friday 12:15'; FreqType = 8; FreqInterval = 32; StartTime = 121500
+         Jobs = @('DatabaseIntegrityCheck - USER_DATABASES') }
+  )
+  ```
+
+  | Key | Required | Notes |
+  |---|---|---|
+  | `Name` | yes | Unique, 128 characters max; the existence check is on this name. |
+  | `FreqType` | yes | `4` daily or `8` weekly. |
+  | `FreqInterval` | yes | Daily: every N days (1-365). Weekly: day bitmask, Sun 1, Mon 2, Tue 4, Wed 8, Thu 16, Fri 32, Sat 64 (Mon-Fri = 62). |
+  | `StartTime` | yes | `HHMMSS`, e.g. `180000`. |
+  | `SubdayType` / `SubdayInterval` / `EndTime` | no | Repeat within the day: `1` once (default), `4` minutes (1-59), `8` hours (1-23); `EndTime` defaults to `235959`. |
+  | `Jobs` | yes | Jobs created by the solution (`DatabaseBackup - ...`, `DatabaseIntegrityCheck - ...`, `IndexOptimize - USER_DATABASES`, `CommandLog Cleanup`, `Output File Cleanup`, `sp_delete_backuphistory`, `sp_purge_jobhistory`). |
+
+  Behaviours: changing an entry in the `.psd1` does not update an existing schedule (edit it in SQL
+  Server Agent, or delete it in `msdb` to have it created again); a schedule detached from a job is
+  attached again at the next consistency check (disable it instead); a job missing from `msdb` is
+  skipped. The commented "lab VMs shut down at 20:00" profile in `CfgAppSql.psd1` and
+  [`scripts/sql/README.md`](https://github.com/luigilink/SPSConfigKit/blob/main/scripts/sql/README.md)
+  give the full example and the manual T-SQL alternative.
 
 ## Reference example `.psd1`s (PDC / PULL / SQL)
 
@@ -898,6 +929,11 @@ are skipped automatically (e.g. SharePoint checks are not run against
   `OOS.CertFriendlyName` resolves to a known `FriendlyName`.
 - **Workflow** &mdash; when `SharePoint.Workflow.Enabled` is `$true`, `ServerName`, `HostUri`, `SiteUrl`,
   `ClientFileName` and `ClientProductId` are declared, and an `http` `HostUri` comes with `AllowOAuthHttp`.
+- **SQL maintenance schedules** &mdash; when `SQL.MaintenanceSolution.Schedules` is not empty, each entry
+  has a `Name`, a valid `StartTime` (HHMMSS), at least one job, consistent `FreqType` (4 / 8),
+  `FreqInterval`, `SubdayType`, `SubdayInterval` and `EndTime` values; every job is one created by the
+  Maintenance Solution; schedule names are unique. The validation rules are also exercised on synthetic
+  cases for any SQL configuration.
 - **Managed accounts** &mdash; `SharePoint.ManagedAccounts` (or the
   default `@('FARM','IISAPP','SEARCH')` when omitted) is a subset of
   `Secrets.psd1`.

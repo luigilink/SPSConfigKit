@@ -1,31 +1,56 @@
 # SPSConfigKit - Release Notes
 
-## [1.11.0] - 2026-MM-DD
+## [1.10.0] - 2026-11-26
 
-This release lets `CfgAppSql` create the SQL Agent schedules of the Ola Hallengren Maintenance Solution jobs.
-The option is **opt-in and create-only**: `NonNodeData.SQL.MaintenanceSolution.Schedules` is empty by default, so
-the jobs stay unscheduled and existing deployments are unaffected. The SQL brick remains a reference example.
+This release adds **SharePoint Workflow Manager (SWM)** support to the kit: a new `CfgAppSwm` configuration
+that builds the SWM server, and an optional block in `CfgAppSps` that installs the SharePoint Workflow Manager
+Client on the SharePoint servers and registers the Workflow Manager farm. It also fixes the order in which
+non-master SharePoint servers join the farm. Everything new is optional and off by default
+(`SharePoint.Workflow.Enabled = $false`), so existing farms are unaffected. The name is `SWM`, not `WFM`: the
+legacy Microsoft Workflow Manager is no longer installable and its support ended on 14 July 2026.
 
 ### Added
 
-- Create the SQL Agent schedules of the Maintenance Solution jobs in `CfgAppSql` (#119)
-  - Each entry of `Schedules` declares a `Name`, `FreqType` (4 daily, 8 weekly), `FreqInterval`, `StartTime`
-    (HHMMSS), optional `SubdayType` / `SubdayInterval` / `EndTime`, and the `Jobs` to attach.
-  - A `SqlScript` resource creates a schedule only if no schedule of that name exists in `msdb`, then attaches
-    it to the listed jobs if not already attached. It never modifies an existing schedule, and its Test ignores
-    the time and days: a change made by a DBA is kept and is not reported as drift. A job missing from `msdb`
-    is skipped.
-  - `CfgAppSql.psd1` carries a commented "lab VMs shut down at 20:00" profile; the configuration test checks
-    the list; `scripts/sql/README.md` and the wiki describe the option and its limits.
+- New `scripts/swm/CfgAppSwm` configuration for the SWM server (#95, #97, #99, #102, #104, #106, #108, #110, #114)
+  - Builds the SWM server end to end in pull mode: the IIS prerequisites and firewall, Azure Service Fabric,
+    the SharePoint Workflow Manager Client and SharePoint Workflow Manager installs, then the Service Bus
+    and Workflow Manager farms with a SQL alias and the Service Bus namespace. The farm secrets are encrypted
+    for the DSC certificate at compile time. The Workflow Manager endpoint can use the lab CA certificate
+    (`SharePointWorkflowCert`, opt-in through `NonNodeData.SWM.SslCertificateName`).
+  - Supporting changes: the `SWM` service account and the `SharePointWorkflowCert` certificate with its DNS
+    name in the lab domain controller configuration, the SWM installers staged by
+    `Initialize-SoftwarePackages`, and `SWMCertKey` in `Secrets.sample.psd1`.
+  - The `SWM` section of the wiki documents the behaviours learned on the lab and the pull deployment.
+    `CfgAppSwm` is still marked "In development" in the wiki.
+
+- Register the Workflow Manager farm in `CfgAppSps` (#112)
+  - New optional `NonNodeData.SharePoint.Workflow` block. When enabled, every SharePoint server installs the
+    SharePoint Workflow Manager Client and the master registers the SWM farm with `SPWorkflowService`, after
+    waiting for the SWM server and for the client installs of the other servers.
+  - The compilation fails when a setting is missing or when an `http` `HostUri` has no `AllowOAuthHttp`.
+
+- Ship sample modern team and communication sites with dedicated content databases (#93)
+
+### Fixed
+
+- Non-master SharePoint servers now join the farm only once the master has created it (#74)
+  - The wait declared on the non-master nodes was not wired to the join. Waiting for the end of the master
+    configuration would have deadlocked with the search topology wait (#73), so the master now emits an early
+    `SPSFarmCreated_Completed` marker right after the farm creation and the join waits for it.
+  - The permanent `PROCESS_SPSWaitForWebApp` drift reported at every consistency check on the non-master
+    nodes is gone.
 
 ### Validation and known limits
 
-- The Pester configuration test and the T-SQL generator were run on a workstation. The schedules were not
-  applied to a live SQL Server from the kit yet: validate on the lab before tagging.
-- Changing a schedule in `CfgAppSql.psd1` does not update an existing schedule (create-only): edit it in SQL
-  Server Agent, or delete it in `msdb` to let DSC create it again.
-- A DBA who detaches a schedule from a job gets it attached again at the next consistency check; disable the
-  schedule or the job instead.
+- Validated on the lab Subscription Edition farm (pull mode): the SWM server is compliant, the SharePoint
+  servers apply the Workflow block, both waits pass, the Workflow Service Application Proxy exists and the
+  Workflow Service status page reports "Workflow is Connected".
+- Not tested: running a SharePoint 2013 workflow end to end, and bringing up new (clean) nodes with the #74 fix.
+- Not handled yet: updating the SharePoint Workflow Manager Client MSI when its product code changes (#116).
+  The Service Bus certificates stay auto-generated. Port 443 for the Workflow Manager endpoint is untested;
+  the lab uses 12290.
+- To enable the Workflow block on an existing farm, let the master apply the new MOF first: the other
+  SharePoint servers wait for the new marker until then.
 
 ## Changelog
 

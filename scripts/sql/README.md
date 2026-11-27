@@ -37,16 +37,80 @@ The install is idempotent: a generated test script checks for the `CommandExecut
 procedure in the target database and the `SqlScript` resource is skipped once it exists.
 The script runs under the SQL sysadmin RunAs account (Ola's installer requires sysadmin).
 
-### Job schedules (left to the SQL admin)
+### Job schedules (left to the SQL admin by default)
 
 By design, the SQL Agent jobs created by the solution are **not scheduled** — the kit
 provisions the jobs, but *when* they run is an operational decision (backup window, RPO/RTO,
 business load, other SQL jobs) that belongs to the SQL administrator. This is also why the
-kit does **not** manage the schedules in DSC: a schedule pinned by the configuration would be
-overwritten on every consistency check, fighting any manual tuning a DBA applies in
+kit does **not** manage the schedules in DSC by default: a schedule pinned by the configuration
+would be overwritten on every consistency check, fighting any manual tuning a DBA applies in
 production.
 
-After the jobs exist, add the schedules by hand (SQL Server Agent, or T-SQL). Example — a
+#### Optional: create the schedules (opt-in, create-only)
+
+For labs and rebuildable VMs, `NonNodeData.SQL.MaintenanceSolution.Schedules` can list the
+schedules to create. It is **empty by default**: nothing is created and the jobs stay
+unscheduled. When it is not empty, the `MIDDLEWARE_SqlMaintenanceSchedules` `SqlScript`
+resource runs after the installation of the solution and, for each entry:
+
+1. creates the schedule **only if no schedule of that name exists** in `msdb`;
+2. attaches it to the listed jobs if it is not already attached (a job missing from `msdb`
+   is skipped).
+
+It **never modifies an existing schedule**. The Test script only checks that the schedule and
+its links exist, never the time or the days, so a schedule retouched by a DBA is not drift.
+
+| Key | Required | Notes |
+|---|---|---|
+| `Name` | yes | Unique (case-insensitive), 128 characters max. The existence check is on this name. |
+| `FreqType` | yes | `4` daily (`FreqInterval` = every N days, 1-365) or `8` weekly (`FreqInterval` = day bitmask). |
+| `FreqInterval` | yes | Weekly bitmask: Sun 1, Mon 2, Tue 4, Wed 8, Thu 16, Fri 32, Sat 64. Mon-Fri = 62, Friday = 32, Wednesday = 8. |
+| `StartTime` | yes | `HHMMSS` (e.g. `173000` = 17:30). |
+| `SubdayType` | no | `1` once (default), `4` minutes, `8` hours. |
+| `SubdayInterval` | with `SubdayType` 4 / 8 | 1-59 minutes or 1-23 hours. |
+| `EndTime` | no | `HHMMSS`, default `235959`; must be later than `StartTime` with a sub-day frequency. |
+| `Jobs` | yes | Names of the jobs created by the solution (see below). |
+
+Jobs created by the solution: `DatabaseBackup - SYSTEM_DATABASES - FULL`,
+`DatabaseBackup - USER_DATABASES - FULL` / `DIFF` / `LOG`,
+`DatabaseIntegrityCheck - SYSTEM_DATABASES` / `USER_DATABASES`,
+`IndexOptimize - USER_DATABASES`, `CommandLog Cleanup`, `Output File Cleanup`,
+`sp_delete_backuphistory`, `sp_purge_jobhistory`. Other jobs (`syspolicy_purge_history`, SharePoint
+jobs) are not managed.
+
+Example profile "lab VMs shut down at 20:00" (hours are the VM's local time, working days).
+It is also in `CfgAppSql.psd1`, commented:
+
+```powershell
+Schedules = @(
+  @{ Name = 'SPSKit - Weekdays 17:30'; FreqType = 8; FreqInterval = 62; StartTime = 173000; Jobs = @('DatabaseBackup - SYSTEM_DATABASES - FULL') }
+  @{ Name = 'SPSKit - Weekdays 18:00'; FreqType = 8; FreqInterval = 62; StartTime = 180000; Jobs = @('DatabaseBackup - USER_DATABASES - FULL') }
+  @{ Name = 'SPSKit - Friday 12:00'; FreqType = 8; FreqInterval = 32; StartTime = 120000; Jobs = @('DatabaseIntegrityCheck - SYSTEM_DATABASES') }
+  @{ Name = 'SPSKit - Friday 12:15'; FreqType = 8; FreqInterval = 32; StartTime = 121500; Jobs = @('DatabaseIntegrityCheck - USER_DATABASES') }
+  @{ Name = 'SPSKit - Wednesday 12:30'; FreqType = 8; FreqInterval = 8; StartTime = 123000; Jobs = @('IndexOptimize - USER_DATABASES') }
+  @{ Name = 'SPSKit - Friday 19:00'; FreqType = 8; FreqInterval = 32; StartTime = 190000; Jobs = @('CommandLog Cleanup', 'Output File Cleanup', 'sp_delete_backuphistory', 'sp_purge_jobhistory') }
+)
+```
+
+`DatabaseBackup - USER_DATABASES - DIFF` is left unscheduled. `DatabaseBackup - USER_DATABASES - LOG`
+is only useful for databases in the `FULL` recovery model; with `SIMPLE` databases (typical lab)
+it has nothing to back up. For `FULL` databases, add for instance
+`@{ Name = 'SPSKit - Weekdays log 30min'; FreqType = 8; FreqInterval = 62; SubdayType = 4; SubdayInterval = 30; StartTime = 083000; EndTime = 193000; Jobs = @('DatabaseBackup - USER_DATABASES - LOG') }`.
+
+Behaviour to know:
+
+- **Create-only**: changing a schedule in the `.psd1` does not update an existing one. Edit it in
+  SQL Server Agent, or delete it in `msdb` and let DSC create it again at the next consistency check.
+- **Re-attach**: a schedule detached from a job (or deleted) by a DBA is created / attached again at
+  the next consistency check. To stop a schedule, disable it (or the job) instead of detaching it.
+- **Shared schedule**: a schedule listed for several jobs (e.g. the Friday 19:00 cleanup) is one
+  schedule; changing it in SQL Server Agent changes all its jobs.
+- **Invalid entry**: the compilation fails with the list of the problems; the configuration test
+  (`Invoke-ConfigDataTest.ps1`) checks the same rules and that the jobs exist in the solution.
+
+#### Manual schedules
+
+Without the option above, add the schedules by hand (SQL Server Agent, or T-SQL). Example — a
 daily full backup at 21:00 and hourly log backups:
 
 ```sql

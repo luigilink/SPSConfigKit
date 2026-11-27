@@ -215,6 +215,20 @@ try {
       $Schedule
     )
     $errors = @()
+    # Keep in sync with $script:OlaJobNames in scripts/test/ConfigData.Tests.ps1.
+    $olaJobNames = @(
+      'CommandLog Cleanup'
+      'DatabaseBackup - SYSTEM_DATABASES - FULL'
+      'DatabaseBackup - USER_DATABASES - DIFF'
+      'DatabaseBackup - USER_DATABASES - FULL'
+      'DatabaseBackup - USER_DATABASES - LOG'
+      'DatabaseIntegrityCheck - SYSTEM_DATABASES'
+      'DatabaseIntegrityCheck - USER_DATABASES'
+      'IndexOptimize - USER_DATABASES'
+      'Output File Cleanup'
+      'sp_delete_backuphistory'
+      'sp_purge_jobhistory'
+    )
     $seenNames = @{}
     $rows = @()
     $setStatements = @()
@@ -266,6 +280,11 @@ try {
       $jobs = @($item.Jobs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
       if ($jobs.Count -eq 0) {
         $errors += "$label : Jobs must list at least one job name."
+      }
+      foreach ($job in $jobs) {
+        if ($job -cnotin $olaJobNames) {
+          $errors += "$label : '$job' is not a job created by the Maintenance Solution."
+        }
       }
       if ($errors.Count -gt 0) { continue }
 

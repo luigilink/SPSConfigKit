@@ -105,8 +105,10 @@ Behaviour to know:
   the next consistency check. To stop a schedule, disable it (or the job) instead of detaching it.
 - **Shared schedule**: a schedule listed for several jobs (e.g. the Friday 19:00 cleanup) is one
   schedule; changing it in SQL Server Agent changes all its jobs.
-- **Invalid entry**: the compilation fails with the list of the problems; the configuration test
-  (`Invoke-ConfigDataTest.ps1`) checks the same rules and that the jobs exist in the solution.
+- **Invalid entry**: the compilation fails with the list of the problems, including a job name
+  that is not one of the jobs created by the solution (so `syspolicy_purge_history`, SharePoint jobs
+  and typos are refused). The configuration test (`Invoke-ConfigDataTest.ps1`) checks the same rules.
+  A valid job that is absent from `msdb` (e.g. the solution installed with `@CreateJobs = 'N'`) is skipped at run time.
 
 #### Manual schedules
 
